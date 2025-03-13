@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import { pl } from 'date-fns/locale';
 import EventAddModal from './EventAddModal';
+import EventDetailsModal from './EventDetailsModal';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 
 /**
@@ -16,6 +17,8 @@ const EventsList: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isEventAddModalOpen, setIsEventAddModalOpen] = useState<boolean>(false);
+  const [isEventDetailsModalOpen, setIsEventDetailsModalOpen] = useState<boolean>(false);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedEventType, setSelectedEventType] = useState<string | null>(null);
   const [roles, setRoles] = useState<{id: number, nazwa: string}[]>([]);
   const [orderedEventTypes, setOrderedEventTypes] = useState<string[]>([]);
@@ -264,10 +267,30 @@ const EventsList: React.FC = () => {
     setIsEventAddModalOpen(true);
   };
 
-  // Obsługa sukcesu dodania wydarzenia
+  // Obsługa dodania nowego wydarzenia
   const handleEventAdded = () => {
+    // Odśwież listę wydarzeń
     fetchData();
+    toast.success('Lista wydarzeń została zaktualizowana');
+  };
+
+  // Handler for event updates, this is also used after adding a new event
+  const handleEventUpdated = () => {
+    // Refresh the list of events
+    fetchData();
+    toast.success('Lista wydarzeń została zaktualizowana');
+  };
+
+  // Handle closing of event add/edit modal
+  const handleCloseEventModal = () => {
     setIsEventAddModalOpen(false);
+    setSelectedEvent(null);
+  };
+
+  // Handle closing of event details modal
+  const handleCloseDetailsModal = () => {
+    setIsEventDetailsModalOpen(false);
+    setSelectedEvent(null);
   };
 
   // Grupowanie wydarzeń według typu
@@ -598,14 +621,20 @@ const EventsList: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => window.alert('Szczegóły wydarzenia będą dostępne wkrótce')}
+                            onClick={() => {
+                              setSelectedEvent(event);
+                              setIsEventDetailsModalOpen(true);
+                            }}
                             className="text-blue-400 hover:text-blue-300 transition-colors"
                             title="Zobacz szczegóły"
                           >
                             <FaEye />
                           </button>
                           <button
-                            onClick={() => window.alert('Edycja wydarzenia będzie dostępna wkrótce')}
+                            onClick={() => {
+                              setSelectedEvent(event);
+                              setIsEventAddModalOpen(true);
+                            }}
                             className="text-amber-400 hover:text-amber-300 transition-colors"
                             title="Edytuj"
                           >
@@ -633,8 +662,18 @@ const EventsList: React.FC = () => {
       {isEventAddModalOpen && (
         <EventAddModal 
           isOpen={isEventAddModalOpen} 
-          onClose={() => setIsEventAddModalOpen(false)}
-          onEventAdded={handleEventAdded}
+          onClose={handleCloseEventModal}
+          onEventAdded={handleEventUpdated}
+          editEvent={selectedEvent}
+        />
+      )}
+
+      {/* Modal szczegółów wydarzenia */}
+      {isEventDetailsModalOpen && (
+        <EventDetailsModal 
+          isOpen={isEventDetailsModalOpen}
+          onClose={handleCloseDetailsModal}
+          event={selectedEvent}
         />
       )}
     </div>
