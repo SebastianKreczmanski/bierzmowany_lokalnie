@@ -38,8 +38,17 @@ const getRoleNames = (roleIds: string): string => {
     '7': 'Świadek'
   };
   
-  return roleIds.split(',')
-    .map(id => roles[id.trim()] || `Rola ${id}`)
+  // Check if all roles are present (1-6 which represent all user roles)
+  const roleIdArray = roleIds.split(',').map(id => id.trim());
+  const allRoleIds = ['1', '2', '3', '4', '5', '6'];
+  const hasAllRoles = allRoleIds.every(roleId => roleIdArray.includes(roleId));
+  
+  if (hasAllRoles) {
+    return 'Wszyscy';
+  }
+  
+  return roleIdArray
+    .map(id => roles[id] || `Rola ${id}`)
     .join(', ');
 };
 

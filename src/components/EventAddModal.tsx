@@ -302,8 +302,16 @@ const EventAddModal: React.FC<EventAddModalProps> = ({
         endDateTime = `${eventEndDate}T${eventEndTime}:00`;
       }
       
-      // Połącz wybrane role przecinkiem
-      const rolesString = selectedRoles.join(',');
+      // IMPORTANT: Filter out any non-numeric role IDs (like 'wszystkie')
+      // to ensure only valid numeric IDs are saved to the database
+      const numericRoles = selectedRoles
+        .filter(roleId => !isNaN(Number(roleId)))
+        .map(roleId => roleId.toString());
+      
+      // Join numeric roles with commas for database storage
+      const rolesString = numericRoles.join(',');
+      
+      console.log('Saving roles:', numericRoles, 'as string:', rolesString);
       
       // Dane wydarzenia
       const eventData = {
@@ -601,8 +609,7 @@ const EventAddModal: React.FC<EventAddModalProps> = ({
                             id={`role-${role.id}`}
                             checked={selectedRoles.includes(role.id.toString())}
                             onChange={(e) => handleRoleChange(role.id.toString(), e.target.checked)}
-                            disabled={selectedRoles.includes('wszystkie')}
-                            className="w-4 h-4 text-amber-600 border-gray-500 rounded focus:ring-amber-500 bg-gray-700 disabled:opacity-50"
+                            className="w-4 h-4 text-amber-600 border-gray-500 rounded focus:ring-amber-500 bg-gray-700"
                           />
                           <label htmlFor={`role-${role.id}`} className="ml-2 text-sm text-gray-300">
                             {role.nazwa === 'administrator' ? 'Administrator' :

@@ -351,6 +351,19 @@ const EventsList: React.FC = () => {
     }
   };
 
+  // Check if all roles are selected to display "Wszyscy" instead of individual roles
+  const hasAllRoles = (roleIds: string): boolean => {
+    if (!roleIds) return false;
+    
+    // If "wszystkie" is explicitly included
+    if (roleIds.includes('wszystkie')) return true;
+    
+    // Check if all roles (1-6) are present
+    const roleIdArray = roleIds.split(',').map(id => id.trim());
+    const allRoleIds = ['1', '2', '3', '4', '5', '6'];
+    return allRoleIds.every(roleId => roleIdArray.includes(roleId));
+  };
+
   // Funkcja formatująca nazwę grupy
   const formatGroupName = (groupName: string): string => {
     if (!groupName || groupName.trim() === '') return '';
@@ -585,19 +598,25 @@ const EventsList: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                         <div className="flex flex-wrap gap-1">
-                          {event.dlaroli && event.dlaroli.split(',').map((roleId, index) => {
-                            const roleIdNum = parseInt(roleId.trim());
-                            if (isNaN(roleIdNum)) return null;
-                            
-                            return (
-                              <span
-                                key={`${event.id}-role-${roleIdNum}-${index}`}
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(roleIdNum)}`}
-                              >
-                                {getRoleName(roleIdNum)}
-                              </span>
-                            );
-                          })}
+                          {hasAllRoles(event.dlaroli) ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-900 text-emerald-200">
+                              Wszyscy
+                            </span>
+                          ) : (
+                            event.dlaroli && event.dlaroli.split(',').map((roleId, index) => {
+                              const roleIdNum = parseInt(roleId.trim());
+                              if (isNaN(roleIdNum)) return null;
+                              
+                              return (
+                                <span
+                                  key={`${event.id}-role-${roleIdNum}-${index}`}
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(roleIdNum)}`}
+                                >
+                                  {getRoleName(roleIdNum)}
+                                </span>
+                              );
+                            })
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
