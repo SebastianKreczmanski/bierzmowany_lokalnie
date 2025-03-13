@@ -130,12 +130,18 @@ const UserForm: React.FC<UserFormProps> = ({
   const [emailModified, setEmailModified] = useState(false);
   const [phoneModified, setPhoneModified] = useState(false);
   
+  // Dodajemy stan do śledzenia modyfikacji hasła
+  const [passwordModified, setPasswordModified] = useState(false);
+  const [confirmPasswordModified, setConfirmPasswordModified] = useState(false);
+  const [passwordsMatch, setPasswordsMatch] = useState(false);
+  
   // Dodajemy stan do zarządzania zapisywaniem poszczególnych pól
   const [isSavingUsername, setIsSavingUsername] = useState(false);
   const [isSavingFirstName, setIsSavingFirstName] = useState(false);
   const [isSavingLastName, setIsSavingLastName] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
   const [isSavingPhone, setIsSavingPhone] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
   
   // Dodajemy stan do śledzenia błędów dla poszczególnych pól
   const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -143,6 +149,7 @@ const UserForm: React.FC<UserFormProps> = ({
   const [lastNameError, setLastNameError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   
   // Dodajemy stan do zmiany hasła
   const [changePassword, setChangePassword] = useState(false);
@@ -294,6 +301,26 @@ const UserForm: React.FC<UserFormProps> = ({
     // Sprawdzamy, czy wartość jest różna od oryginalnej
     setUsernameModified(value !== initialData?.username);
     setUsernameError(null);
+  };
+  
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setPassword(value);
+    setPasswordModified(value !== '');
+    
+    // Sprawdź, czy hasła się zgadzają
+    setPasswordsMatch(value === confirmPassword && value !== '');
+    setPasswordError(null);
+  };
+  
+  const handleConfirmPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setConfirmPassword(value);
+    setConfirmPasswordModified(value !== '');
+    
+    // Sprawdź, czy hasła się zgadzają
+    setPasswordsMatch(password === value && value !== '');
+    setPasswordError(null);
   };
   
   const handleFirstNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -473,6 +500,42 @@ const UserForm: React.FC<UserFormProps> = ({
       toast.error('Błąd aktualizacji loginu: ' + (err.message || 'Nieznany błąd'));
     } finally {
       setIsSavingUsername(false);
+    }
+  };
+  
+  const handleSavePassword = async () => {
+    if (!initialData?.id) {
+      setPasswordError('Nie można zaktualizować hasła - brak ID użytkownika');
+      return;
+    }
+    
+    if (!password) {
+      setPasswordError('Hasło nie może być puste');
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      setPasswordError('Hasła muszą być identyczne');
+      return;
+    }
+    
+    setIsSavingPassword(true);
+    setPasswordError(null);
+    
+    try {
+      await usersApi.updateUser(initialData.id, { password });
+      toast.success('Hasło zostało zaktualizowane');
+      setPasswordModified(false);
+      setConfirmPasswordModified(false);
+      setPassword('');
+      setConfirmPassword('');
+      setPasswordsMatch(false);
+    } catch (err: any) {
+      console.error('Błąd aktualizacji hasła:', err);
+      setPasswordError(err.message || 'Nie udało się zaktualizować hasła');
+      toast.error('Błąd aktualizacji hasła: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingPassword(false);
     }
   };
   
@@ -829,7 +892,7 @@ const UserForm: React.FC<UserFormProps> = ({
                 type="text"
                 value={username}
                 onChange={handleUsernameChange}
-                disabled={loading || isSavingUsername || (isEditMode && initialData?.username)}
+                disabled={loading || isSavingUsername}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 required
                 placeholder="Nazwa użytkownika"
@@ -885,30 +948,74 @@ const UserForm: React.FC<UserFormProps> = ({
               <label className="block text-sm font-medium text-gray-300 mb-1">
                 Hasło {!isEditMode && '*'}
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                required={!isEditMode}
-                placeholder="Hasło"
-              />
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={handlePasswordChange}
+                    disabled={loading || isSavingPassword}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    required={!isEditMode}
+                    placeholder="Hasło"
+                  />
+                </div>
+              </div>
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">
                 Powtórz hasło {!isEditMode && '*'}
               </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={loading}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                required={!isEditMode}
-                placeholder="Powtórz hasło"
-              />
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={handleConfirmPasswordChange}
+                    disabled={loading || isSavingPassword}
+                    className={`w-full px-3 py-2 bg-gray-700 border ${
+                      confirmPasswordModified && !passwordsMatch
+                        ? 'border-red-600'
+                        : confirmPasswordModified && passwordsMatch
+                        ? 'border-green-600'
+                        : 'border-gray-600'
+                    } rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500`}
+                    required={!isEditMode}
+                    placeholder="Powtórz hasło"
+                  />
+                </div>
+                
+                {isEditMode && changePassword && passwordsMatch && passwordModified && confirmPasswordModified && (
+                  <button
+                    type="button"
+                    onClick={handleSavePassword}
+                    disabled={loading || isSavingPassword || !passwordsMatch}
+                    className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  >
+                    {isSavingPassword ? (
+                      <>
+                        <span className="animate-spin mr-1">&#8635;</span>
+                        Zapisuję...
+                      </>
+                    ) : (
+                      'Zapisz hasło'
+                    )}
+                  </button>
+                )}
+              </div>
+              
+              {confirmPasswordModified && !passwordsMatch && (
+                <p className="text-xs text-red-400 mt-1">
+                  Hasła nie są identyczne
+                </p>
+              )}
+              
+              {passwordError && (
+                <p className="text-xs text-red-400 mt-1">
+                  {passwordError}
+                </p>
+              )}
             </div>
           </>
         )}
