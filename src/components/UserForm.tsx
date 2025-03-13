@@ -123,6 +123,27 @@ const UserForm: React.FC<UserFormProps> = ({
   const [email, setEmail] = useState(initialData?.email || '');
   const [phone, setPhone] = useState(initialData?.telefon || '');
   
+  // Dodajemy stan do śledzenia modyfikacji dla każdego pola
+  const [usernameModified, setUsernameModified] = useState(false);
+  const [firstNameModified, setFirstNameModified] = useState(false);
+  const [lastNameModified, setLastNameModified] = useState(false);
+  const [emailModified, setEmailModified] = useState(false);
+  const [phoneModified, setPhoneModified] = useState(false);
+  
+  // Dodajemy stan do zarządzania zapisywaniem poszczególnych pól
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
+  const [isSavingFirstName, setIsSavingFirstName] = useState(false);
+  const [isSavingLastName, setIsSavingLastName] = useState(false);
+  const [isSavingEmail, setIsSavingEmail] = useState(false);
+  const [isSavingPhone, setIsSavingPhone] = useState(false);
+  
+  // Dodajemy stan do śledzenia błędów dla poszczególnych pól
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [firstNameError, setFirstNameError] = useState<string | null>(null);
+  const [lastNameError, setLastNameError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  
   // Dodajemy stan do zmiany hasła
   const [changePassword, setChangePassword] = useState(false);
   
@@ -266,26 +287,55 @@ const UserForm: React.FC<UserFormProps> = ({
     setSelectedGrupy(selectedValues);
   };
 
-  // Formatowanie numeru telefonu
-  const formatPhoneNumber = (phone: string) => {
-    // Usuń wszystkie znaki oprócz cyfr
-    const digitsOnly = phone.replace(/\D/g, '');
-    
-    // Format XXX-XXX-XXX
-    if (digitsOnly.length <= 3) {
-      return digitsOnly;
-    } else if (digitsOnly.length <= 6) {
-      return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3)}`;
-    } else {
-      return `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6, 9)}`;
-    }
+  // Funkcje obsługujące zmiany poszczególnych pól
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setUsername(value);
+    // Sprawdzamy, czy wartość jest różna od oryginalnej
+    setUsernameModified(value !== initialData?.username);
+    setUsernameError(null);
   };
-
+  
+  const handleFirstNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setFirstName(value);
+    // Sprawdzamy, czy wartość jest różna od oryginalnej
+    setFirstNameModified(value !== initialData?.imie);
+    setFirstNameError(null);
+  };
+  
+  const handleLastNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setLastName(value);
+    // Sprawdzamy, czy wartość jest różna od oryginalnej
+    setLastNameModified(value !== initialData?.nazwisko);
+    setLastNameError(null);
+  };
+  
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEmail(value);
+    // Sprawdzamy, czy wartość jest różna od oryginalnej
+    setEmailModified(value !== initialData?.email);
+    setEmailError(null);
+  };
+  
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatPhoneNumber(e.target.value);
-    // Ogranicz do max 11 znaków (XXX-XXX-XXX)
-    if (formatted.length <= 11) {
-      setPhone(formatted);
+    const value = e.target.value;
+    if (value === '' || /^[\d\-]*$/.test(value)) {
+      setPhone(value);
+      // Sprawdzamy, czy wartość jest różna od oryginalnej
+      setPhoneModified(value !== initialData?.telefon);
+      setPhoneError(null);
+      
+      // Automatyczne dodawanie myślników do numeru telefonu
+      if (/^\d{3}$/.test(value)) {
+        setPhone(value + '-');
+        setPhoneModified(true);
+      } else if (/^\d{3}\-\d{3}$/.test(value)) {
+        setPhone(value + '-');
+        setPhoneModified(true);
+      }
     }
   };
 
@@ -395,6 +445,144 @@ const UserForm: React.FC<UserFormProps> = ({
       toast.error('Błąd aktualizacji daty urodzenia: ' + (err.message || 'Nieznany błąd'));
     } finally {
       setIsSavingBirthDate(false);
+    }
+  };
+  
+  // Funkcje do zapisywania poszczególnych pól
+  const handleSaveUsername = async () => {
+    if (!initialData?.id) {
+      setUsernameError('Nie można zaktualizować loginu - brak ID użytkownika');
+      return;
+    }
+    
+    if (!username.trim()) {
+      setUsernameError('Login nie może być pusty');
+      return;
+    }
+    
+    setIsSavingUsername(true);
+    setUsernameError(null);
+    
+    try {
+      await usersApi.updateUser(initialData.id, { username });
+      toast.success('Login został zaktualizowany');
+      setUsernameModified(false);
+    } catch (err: any) {
+      console.error('Błąd aktualizacji loginu:', err);
+      setUsernameError(err.message || 'Nie udało się zaktualizować loginu');
+      toast.error('Błąd aktualizacji loginu: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+  
+  const handleSaveFirstName = async () => {
+    if (!initialData?.id) {
+      setFirstNameError('Nie można zaktualizować imienia - brak ID użytkownika');
+      return;
+    }
+    
+    if (!firstName.trim()) {
+      setFirstNameError('Imię nie może być puste');
+      return;
+    }
+    
+    setIsSavingFirstName(true);
+    setFirstNameError(null);
+    
+    try {
+      await usersApi.updateUser(initialData.id, { imie: firstName });
+      toast.success('Imię zostało zaktualizowane');
+      setFirstNameModified(false);
+    } catch (err: any) {
+      console.error('Błąd aktualizacji imienia:', err);
+      setFirstNameError(err.message || 'Nie udało się zaktualizować imienia');
+      toast.error('Błąd aktualizacji imienia: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingFirstName(false);
+    }
+  };
+  
+  const handleSaveLastName = async () => {
+    if (!initialData?.id) {
+      setLastNameError('Nie można zaktualizować nazwiska - brak ID użytkownika');
+      return;
+    }
+    
+    if (!lastName.trim()) {
+      setLastNameError('Nazwisko nie może być puste');
+      return;
+    }
+    
+    setIsSavingLastName(true);
+    setLastNameError(null);
+    
+    try {
+      await usersApi.updateUser(initialData.id, { nazwisko: lastName });
+      toast.success('Nazwisko zostało zaktualizowane');
+      setLastNameModified(false);
+    } catch (err: any) {
+      console.error('Błąd aktualizacji nazwiska:', err);
+      setLastNameError(err.message || 'Nie udało się zaktualizować nazwiska');
+      toast.error('Błąd aktualizacji nazwiska: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingLastName(false);
+    }
+  };
+  
+  const handleSaveEmail = async () => {
+    if (!initialData?.id) {
+      setEmailError('Nie można zaktualizować emaila - brak ID użytkownika');
+      return;
+    }
+    
+    // Sprawdzanie formatu email
+    if (email && !/\S+@\S+\.\S+/.test(email)) {
+      setEmailError('Nieprawidłowy format adresu email');
+      return;
+    }
+    
+    setIsSavingEmail(true);
+    setEmailError(null);
+    
+    try {
+      await usersApi.updateUser(initialData.id, { email });
+      toast.success('Email został zaktualizowany');
+      setEmailModified(false);
+    } catch (err: any) {
+      console.error('Błąd aktualizacji emaila:', err);
+      setEmailError(err.message || 'Nie udało się zaktualizować emaila');
+      toast.error('Błąd aktualizacji emaila: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingEmail(false);
+    }
+  };
+  
+  const handleSavePhone = async () => {
+    if (!initialData?.id) {
+      setPhoneError('Nie można zaktualizować telefonu - brak ID użytkownika');
+      return;
+    }
+    
+    // Sprawdzanie formatu telefonu
+    if (phone && !/^\d{3}-\d{3}-\d{3}$/.test(phone)) {
+      setPhoneError('Nieprawidłowy format telefonu (XXX-XXX-XXX)');
+      return;
+    }
+    
+    setIsSavingPhone(true);
+    setPhoneError(null);
+    
+    try {
+      await usersApi.updateUser(initialData.id, { telefon: phone });
+      toast.success('Telefon został zaktualizowany');
+      setPhoneModified(false);
+    } catch (err: any) {
+      console.error('Błąd aktualizacji telefonu:', err);
+      setPhoneError(err.message || 'Nie udało się zaktualizować telefonu');
+      toast.error('Błąd aktualizacji telefonu: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingPhone(false);
     }
   };
   
@@ -635,42 +823,58 @@ const UserForm: React.FC<UserFormProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-1">
             Login *
           </label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={loading || (isEditMode && initialData?.username)}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            required
-            placeholder="Nazwa użytkownika"
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={username}
+                onChange={handleUsernameChange}
+                disabled={loading || isSavingUsername || (isEditMode && initialData?.username)}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                required
+                placeholder="Nazwa użytkownika"
+              />
+            </div>
+            
+            {isEditMode && initialData?.id && usernameModified && (
+              <button
+                type="button"
+                onClick={handleSaveUsername}
+                disabled={loading || isSavingUsername}
+                className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingUsername ? (
+                  <>
+                    <span className="animate-spin mr-1">&#8635;</span>
+                    Zapisuję...
+                  </>
+                ) : (
+                  'Zapisz login'
+                )}
+              </button>
+            )}
+          </div>
+          
+          {usernameError && (
+            <p className="text-xs text-red-400 mt-1">
+              {usernameError}
+            </p>
+          )}
         </div>
         
         {/* Opcja zmiany hasła dla istniejących użytkowników */}
         {isEditMode && (
-          <div className="mt-4 p-3 bg-gray-700/30 rounded-md">
-            <div className="flex items-center justify-between">
-              <label htmlFor="change-password" className="text-sm font-medium text-gray-300">
-                Zmiana hasła
-              </label>
-              <div className="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
-                <input
-                  type="checkbox"
-                  id="change-password"
-                  checked={changePassword}
-                  onChange={() => setChangePassword(!changePassword)}
-                  className={`absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-600 appearance-none cursor-pointer right-6 transition-all duration-200 ease-in ${
-                    changePassword ? 'right-0 border-amber-500' : ''
-                  }`}
-                />
-                <label
-                  htmlFor="change-password"
-                  className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-200 ease-in ${
-                    changePassword ? 'bg-amber-500' : 'bg-gray-600'
-                  }`}
-                ></label>
-              </div>
-            </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="change-password"
+              checked={changePassword}
+              onChange={(e) => setChangePassword(e.target.checked)}
+              className="form-checkbox h-4 w-4 text-amber-600 transition duration-150 ease-in-out"
+            />
+            <label htmlFor="change-password" className="text-sm text-gray-300">
+              Zmień hasło
+            </label>
           </div>
         )}
         
@@ -714,15 +918,43 @@ const UserForm: React.FC<UserFormProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-1">
             Imię *
           </label>
-          <input
-            type="text"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            disabled={loading}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            required
-            placeholder="Podaj imię"
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={firstName}
+                onChange={handleFirstNameChange}
+                disabled={loading || isSavingFirstName}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                required
+                placeholder="Podaj imię"
+              />
+            </div>
+            
+            {isEditMode && initialData?.id && firstNameModified && (
+              <button
+                type="button"
+                onClick={handleSaveFirstName}
+                disabled={loading || isSavingFirstName}
+                className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingFirstName ? (
+                  <>
+                    <span className="animate-spin mr-1">&#8635;</span>
+                    Zapisuję...
+                  </>
+                ) : (
+                  'Zapisz imię'
+                )}
+              </button>
+            )}
+          </div>
+          
+          {firstNameError && (
+            <p className="text-xs text-red-400 mt-1">
+              {firstNameError}
+            </p>
+          )}
         </div>
         
         {/* Nazwisko */}
@@ -730,15 +962,43 @@ const UserForm: React.FC<UserFormProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-1">
             Nazwisko *
           </label>
-          <input
-            type="text"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            disabled={loading}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            required
-            placeholder="Podaj nazwisko"
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={lastName}
+                onChange={handleLastNameChange}
+                disabled={loading || isSavingLastName}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                required
+                placeholder="Podaj nazwisko"
+              />
+            </div>
+            
+            {isEditMode && initialData?.id && lastNameModified && (
+              <button
+                type="button"
+                onClick={handleSaveLastName}
+                disabled={loading || isSavingLastName}
+                className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingLastName ? (
+                  <>
+                    <span className="animate-spin mr-1">&#8635;</span>
+                    Zapisuję...
+                  </>
+                ) : (
+                  'Zapisz nazwisko'
+                )}
+              </button>
+            )}
+          </div>
+          
+          {lastNameError && (
+            <p className="text-xs text-red-400 mt-1">
+              {lastNameError}
+            </p>
+          )}
         </div>
 
         {/* Data urodzenia */}
@@ -771,7 +1031,7 @@ const UserForm: React.FC<UserFormProps> = ({
                     Zapisuję...
                   </>
                 ) : (
-                  'Zapisz zmianę daty'
+                  'Zapisz datę'
                 )}
               </button>
             )}
@@ -805,14 +1065,42 @@ const UserForm: React.FC<UserFormProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-1">
             Email
           </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            placeholder="adres@email.pl"
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="email"
+                value={email}
+                onChange={handleEmailChange}
+                disabled={loading || isSavingEmail}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="adres@email.pl"
+              />
+            </div>
+            
+            {isEditMode && initialData?.id && emailModified && (
+              <button
+                type="button"
+                onClick={handleSaveEmail}
+                disabled={loading || isSavingEmail}
+                className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingEmail ? (
+                  <>
+                    <span className="animate-spin mr-1">&#8635;</span>
+                    Zapisuję...
+                  </>
+                ) : (
+                  'Zapisz email'
+                )}
+              </button>
+            )}
+          </div>
+          
+          {emailError && (
+            <p className="text-xs text-red-400 mt-1">
+              {emailError}
+            </p>
+          )}
         </div>
         
         {/* Telefon */}
@@ -820,15 +1108,44 @@ const UserForm: React.FC<UserFormProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-1">
             Telefon
           </label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={handlePhoneChange}
-            disabled={loading}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            placeholder="XXX-XXX-XXX"
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="tel"
+                value={phone}
+                onChange={handlePhoneChange}
+                disabled={loading || isSavingPhone}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="XXX-XXX-XXX"
+              />
+            </div>
+            
+            {isEditMode && initialData?.id && phoneModified && (
+              <button
+                type="button"
+                onClick={handleSavePhone}
+                disabled={loading || isSavingPhone}
+                className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingPhone ? (
+                  <>
+                    <span className="animate-spin mr-1">&#8635;</span>
+                    Zapisuję...
+                  </>
+                ) : (
+                  'Zapisz telefon'
+                )}
+              </button>
+            )}
+          </div>
+          
           <p className="text-xs text-gray-400 mt-1">Format: XXX-XXX-XXX</p>
+          
+          {phoneError && (
+            <p className="text-xs text-red-400 mt-1">
+              {phoneError}
+            </p>
+          )}
         </div>
 
         {/* Role */}
