@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  @apply bg-gray-900 text-white;
+}
+
+/* Add global styles for drag-and-drop functionality */
+body.grabbing {
+  cursor: grabbing !important;
+}
+
+body.grabbing * {
+  cursor: grabbing !important;
+} 

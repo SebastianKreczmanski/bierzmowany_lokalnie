@@ -1,0 +1,421 @@
+const express = require('express');
+const router = express.Router();
+const db = require('../db');
+const { authenticate, authorize } = require('../middleware/authMiddleware');
+const crypto = require('crypto');
+
+/**
+ * @route  GET /api/users
+ * @desc   Get all users with their roles
+ * @access Private (Admin only) - TEMPORARILY PUBLIC FOR TESTING
+ */
+router.get('/', async (req, res) => {
+  try {
+    // Query to get all users with their roles
+    const query = `
+      SELECT u.id, u.username, u.imie, u.nazwisko, u.data_urodzenia, 
+             GROUP_CONCAT(r.nazwa) as roles
+      FROM user u
+      LEFT JOIN user_role ur ON u.id = ur.user_id
+      LEFT JOIN role r ON ur.role_id = r.id
+      WHERE u.deleted_at IS NULL
+      GROUP BY u.id
+      ORDER BY u.id DESC
+    `;
+    
+    const users = await db.query(query);
+    
+    // Format the response
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      username: user.username,
+      imie: user.imie,
+      nazwisko: user.nazwisko,
+      data_urodzenia: user.data_urodzenia,
+      roles: user.roles ? user.roles.split(',') : []
+    }));
+    
+    res.json({
+      success: true,
+      data: formattedUsers
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Wystąpił błąd podczas pobierania użytkowników',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route  GET /api/users/by-role/:roleName
+ * @desc   Get users by role
+ * @access Private (Admin only)
+ */
+router.get('/by-role/:roleName', authenticate, authorize('administrator'), async (req, res) => {
+  try {
+    const { roleName } = req.params;
+    
+    // Query to get users with a specific role
+    const query = `
+      SELECT u.id, u.username, u.imie, u.nazwisko, u.data_urodzenia, 
+             GROUP_CONCAT(r.nazwa) as roles
+      FROM user u
+      JOIN user_role ur ON u.id = ur.user_id
+      JOIN role r ON ur.role_id = r.id
+      WHERE u.deleted_at IS NULL AND r.nazwa = ?
+      GROUP BY u.id
+      ORDER BY u.nazwisko, u.imie
+    `;
+    
+    const users = await db.query(query, [roleName]);
+    
+    // Format the response
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      username: user.username,
+      imie: user.imie,
+      nazwisko: user.nazwisko,
+      data_urodzenia: user.data_urodzenia,
+      roles: user.roles ? user.roles.split(',') : []
+    }));
+    
+    res.json({
+      success: true,
+      data: formattedUsers
+    });
+  } catch (error) {
+    console.error(`Error fetching users with role ${req.params.roleName}:`, error);
+    res.status(500).json({
+      success: false,
+      message: 'Wystąpił błąd podczas pobierania użytkowników',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route  POST /api/users
+ * @desc   Create a new user
+ * @access Private (Admin only) - TEMPORARILY PUBLIC FOR TESTING
+ */
+router.post('/', async (req, res) => {
+  try {
+    const { 
+      username, 
+      password, 
+      imie, 
+      nazwisko, 
+      data_urodzenia, 
+      email,
+      telefon,
+      roles,
+      adres
+    } = req.body;
+    
+    // Log the received data (excluding password)
+    console.log('Creating user with data:', {
+      username,
+      imie,
+      nazwisko,
+      data_urodzenia,
+      email,
+      telefon,
+      roles,
+      adres
+    });
+    
+    // Validate required fields
+    if (!username || !password || !imie || !nazwisko || !roles || !roles.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Brakuje wymaganych pól'
+      });
+    }
+    
+    // Start a transaction
+    await db.query('START TRANSACTION');
+    
+    try {
+      // Hash the password
+      const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+      
+      // Insert the user
+      const insertUserQuery = `
+        INSERT INTO user (username, password_hash, imie, nazwisko, data_urodzenia)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      
+      const userResult = await db.query(insertUserQuery, [
+        username, 
+        passwordHash, 
+        imie, 
+        nazwisko, 
+        data_urodzenia || null
+      ]);
+      
+      const userId = userResult.insertId;
+      
+      // Add user roles
+      for (const roleName of roles) {
+        // Get role ID
+        const [roleRows] = await db.query('SELECT id FROM role WHERE nazwa = ?', [roleName]);
+        
+        if (roleRows.length > 0) {
+          const roleId = roleRows[0].id;
+          await db.query('INSERT INTO user_role (user_id, role_id) VALUES (?, ?)', [userId, roleId]);
+        }
+      }
+      
+      // Add email if provided
+      if (email) {
+        await db.query(
+          'INSERT INTO emaile (user_id, email, glowny) VALUES (?, ?, 1)',
+          [userId, email]
+        );
+      }
+      
+      // Add phone if provided
+      if (telefon) {
+        await db.query(
+          'INSERT INTO telefony (user_id, numer, glowny) VALUES (?, ?, 1)',
+          [userId, telefon]
+        );
+      }
+      
+      // Add address if provided
+      if (adres) {
+        // TODO: Implement address handling
+      }
+      
+      // Commit the transaction
+      await db.query('COMMIT');
+      
+      res.status(201).json({
+        success: true,
+        message: 'Użytkownik został utworzony',
+        data: { id: userId }
+      });
+    } catch (error) {
+      // Rollback in case of error
+      await db.query('ROLLBACK');
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Wystąpił błąd podczas tworzenia użytkownika',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route  GET /api/users/:id
+ * @desc   Get user details by ID
+ * @access Private (Admin only) - TEMPORARILY PUBLIC FOR TESTING
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    
+    // Get user details
+    const userQuery = `
+      SELECT u.id, u.username, u.imie, u.nazwisko, u.data_urodzenia, u.adres_id,
+             e.email, t.numer as telefon,
+             GROUP_CONCAT(DISTINCT r.nazwa) as roles
+      FROM user u
+      LEFT JOIN emaile e ON u.id = e.user_id AND e.glowny = 1
+      LEFT JOIN telefony t ON u.id = t.user_id AND t.glowny = 1
+      LEFT JOIN user_role ur ON u.id = ur.user_id
+      LEFT JOIN role r ON ur.role_id = r.id
+      WHERE u.id = ? AND u.deleted_at IS NULL
+      GROUP BY u.id
+    `;
+    
+    const users = await db.query(userQuery, [userId]);
+    
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Użytkownik nie znaleziony'
+      });
+    }
+    
+    const user = users[0];
+    
+    // Format user data
+    const userData = {
+      id: user.id,
+      username: user.username,
+      imie: user.imie,
+      nazwisko: user.nazwisko,
+      data_urodzenia: user.data_urodzenia,
+      adres_id: user.adres_id,
+      email: user.email,
+      telefon: user.telefon,
+      roles: user.roles ? user.roles.split(',') : []
+    };
+    
+    // If user has 'rodzic' role, get assigned candidates
+    if (userData.roles.includes('rodzic')) {
+      const candidatesQuery = `
+        SELECT u.id, u.imie, u.nazwisko, u.username
+        FROM user u
+        JOIN rodzic_kandydat rk ON u.id = rk.kandydat_id
+        JOIN rodzic r ON rk.rodzic_id = r.id
+        WHERE r.user_id = ?
+      `;
+      
+      const candidates = await db.query(candidatesQuery, [userId]);
+      userData.przypisani_kandydaci = candidates;
+    }
+    
+    // If user has 'animator' role, get assigned groups
+    if (userData.roles.includes('animator')) {
+      const grupyQuery = `
+        SELECT g.id, g.nazwa
+        FROM grupa g
+        WHERE g.animator_id = ?
+      `;
+      
+      const grupy = await db.query(grupyQuery, [userId]);
+      userData.przypisane_grupy = grupy;
+    }
+    
+    res.json({
+      success: true,
+      data: userData
+    });
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Wystąpił błąd podczas pobierania szczegółów użytkownika',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route  PUT /api/users/:id
+ * @desc   Update user
+ * @access Private (Admin only) - TEMPORARILY PUBLIC FOR TESTING
+ */
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      username, 
+      password, 
+      imie, 
+      nazwisko, 
+      data_urodzenia, 
+      email,
+      telefon,
+      roles
+    } = req.body;
+    
+    // Start a transaction
+    await db.query('START TRANSACTION');
+    
+    try {
+      // Update user basic info
+      let updateUserQuery = 'UPDATE user SET ';
+      const updateParams = [];
+      const updateFields = [];
+      
+      if (username) {
+        updateFields.push('username = ?');
+        updateParams.push(username);
+      }
+      
+      if (password) {
+        const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+        updateFields.push('password_hash = ?');
+        updateParams.push(passwordHash);
+      }
+      
+      if (imie) {
+        updateFields.push('imie = ?');
+        updateParams.push(imie);
+      }
+      
+      if (nazwisko) {
+        updateFields.push('nazwisko = ?');
+        updateParams.push(nazwisko);
+      }
+      
+      if (data_urodzenia) {
+        updateFields.push('data_urodzenia = ?');
+        updateParams.push(data_urodzenia);
+      }
+      
+      if (updateFields.length > 0) {
+        updateUserQuery += updateFields.join(', ') + ' WHERE id = ?';
+        updateParams.push(id);
+        
+        await db.query(updateUserQuery, updateParams);
+      }
+      
+      // Update roles if provided
+      if (roles && roles.length > 0) {
+        // Remove existing roles
+        await db.query('DELETE FROM user_role WHERE user_id = ?', [id]);
+        
+        // Add new roles
+        for (const roleName of roles) {
+          const [roleRows] = await db.query('SELECT id FROM role WHERE nazwa = ?', [roleName]);
+          
+          if (roleRows.length > 0) {
+            const roleId = roleRows[0].id;
+            await db.query('INSERT INTO user_role (user_id, role_id) VALUES (?, ?)', [id, roleId]);
+          }
+        }
+      }
+      
+      // Update email if provided
+      if (email) {
+        // Check if user has an email
+        const [existingEmails] = await db.query('SELECT id FROM emaile WHERE user_id = ? AND glowny = 1', [id]);
+        
+        if (existingEmails.length > 0) {
+          // Update existing primary email
+          await db.query('UPDATE emaile SET email = ? WHERE user_id = ? AND glowny = 1', [email, id]);
+        } else {
+          // Add new primary email
+          await db.query('INSERT INTO emaile (user_id, email, glowny) VALUES (?, ?, 1)', [id, email]);
+        }
+      }
+      
+      // Update phone if provided
+      if (telefon) {
+        // Check if user has a phone
+        const [existingPhones] = await db.query('SELECT id FROM telefony WHERE user_id = ? AND glowny = 1', [id]);
+        
+        if (existingPhones.length > 0) {
+          // Update existing primary phone
+          await db.query('UPDATE telefony SET numer = ? WHERE user_id = ? AND glowny = 1', [telefon, id]);
+        } else {
+          // Add new primary phone
+          await db.query('INSERT INTO telefony (user_id, numer, glowny) VALUES (?, ?, 1)', [id, telefon]);
+        }
+      }
+      
+      // Commit the transaction
+      await db.query('COMMIT');
+      
+      res.json({
+        success: true,
+        message: 'Użytkownik został zaktualizowany'
+      });
+    } catch (error) {
+      // Rollback in case of error
+      await db.query('ROLLBACK');
+      throw error;
+    }
+  } catch (error) {
+    console.error(`
