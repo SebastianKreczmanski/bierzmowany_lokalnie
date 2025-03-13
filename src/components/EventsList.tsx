@@ -598,13 +598,6 @@ const EventsList: React.FC = () => {
                               </span>
                             );
                           })}
-                          {event.dlagrupy && event.dlagrupy.trim() !== '' && (
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getGroupBadgeColor(event.dlagrupy)}`}
-                            >
-                              {formatGroupName(event.dlagrupy)}
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
