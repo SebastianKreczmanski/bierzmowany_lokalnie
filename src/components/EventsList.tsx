@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { eventsApi } from '../services/api';
 import { Event } from '../services/api';
-import { FaEdit, FaTrash, FaEye, FaCalendarPlus } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaEye, FaCalendarPlus, FaGripLines } from 'react-icons/fa';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import { pl } from 'date-fns/locale';
 import EventAddModal from './EventAddModal';
+import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 
 /**
  * Komponent wyświetlający listę wydarzeń z możliwością zarządzania
@@ -17,6 +18,27 @@ const EventsList: React.FC = () => {
   const [isEventAddModalOpen, setIsEventAddModalOpen] = useState<boolean>(false);
   const [selectedEventType, setSelectedEventType] = useState<string | null>(null);
   const [roles, setRoles] = useState<{id: number, nazwa: string}[]>([]);
+  const [orderedEventTypes, setOrderedEventTypes] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  
+  // Create a map to store type to ID mappings
+  const [typeToIdMap, setTypeToIdMap] = useState<Map<string, string>>(new Map());
+
+  // Generate a consistent ID for each type
+  const getTypeId = (type: string): string => {
+    if (typeToIdMap.has(type)) {
+      return typeToIdMap.get(type)!;
+    }
+    
+    // Generate a simple numeric ID based on the position in the array
+    const newId = `type-${typeToIdMap.size + 1}`;
+    const updatedMap = new Map(typeToIdMap);
+    updatedMap.set(type, newId);
+    setTypeToIdMap(updatedMap);
+    
+    console.log(`Generated new ID for "${type}": "${newId}"`);
+    return newId;
+  };
 
   // Pobieranie wydarzeń i ról
   const fetchData = async () => {
@@ -45,6 +67,179 @@ const EventsList: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Initialize ordered event types when events are loaded
+  useEffect(() => {
+    if (events.length > 0) {
+      // Extract unique types from events
+      const uniqueTypes = new Set<string>();
+      events.forEach(event => {
+        const typeName = event.typ?.nazwa || 'Nieokreślony typ';
+        uniqueTypes.add(typeName);
+      });
+      
+      const uniqueTypesArray = Array.from(uniqueTypes);
+      console.log('Unique types from events:', uniqueTypesArray);
+      
+      // Try to load saved order from localStorage first
+      const savedOrder = localStorage.getItem('eventTypesOrder');
+      if (savedOrder) {
+        try {
+          const parsedOrder = JSON.parse(savedOrder);
+          console.log('Loaded saved event types order:', parsedOrder);
+          
+          // Make sure saved order only contains types that exist and includes all new types
+          const validSavedTypes = parsedOrder.filter((type: string) => uniqueTypes.has(type));
+          const missingTypes = uniqueTypesArray.filter(type => !parsedOrder.includes(type));
+          
+          const updatedOrderedTypes = [...validSavedTypes, ...missingTypes];
+          console.log('Updated ordered types (saved + new):', updatedOrderedTypes);
+          
+          setOrderedEventTypes(updatedOrderedTypes);
+        } catch (e) {
+          console.error('Error parsing saved event types order', e);
+          setOrderedEventTypes(uniqueTypesArray);
+        }
+      } else {
+        // If no saved order, use the unique types from events
+        setOrderedEventTypes(uniqueTypesArray);
+      }
+    }
+  }, [events]);
+
+  // Add some CSS to the document that we'll need for dragging effects
+  useEffect(() => {
+    // Create a style element
+    const styleEl = document.createElement('style');
+    
+    // Add CSS for grabbing cursor during drag
+    styleEl.textContent = `
+      body.grabbing {
+        cursor: grabbing !important;
+      }
+      body.grabbing * {
+        cursor: grabbing !important;
+      }
+      
+      .event-type-pill {
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .event-type-pill .drag-handle {
+        opacity: 0.5;
+        transition: opacity 0.2s, background-color 0.2s, transform 0.2s;
+      }
+      
+      .event-type-pill:hover .drag-handle {
+        opacity: 1;
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+      
+      .event-type-pill .drag-handle:hover {
+        transform: scale(1.1);
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+    `;
+    
+    // Append to document head
+    document.head.appendChild(styleEl);
+    
+    // Clean up function
+    return () => {
+      document.head.removeChild(styleEl);
+    };
+  }, []);
+
+  // Handle drag start
+  const handleDragStart = () => {
+    setIsDragging(true);
+    // Add a class to the body to change cursor for the whole page during drag
+    document.body.classList.add('grabbing');
+  };
+
+  // Handle drag and drop
+  const handleDragEnd = (result: DropResult) => {
+    // Reset dragging state
+    setIsDragging(false);
+    document.body.classList.remove('grabbing');
+    
+    console.log("DragEnd result:", result);
+    
+    // If no destination or dragged to the same place, do nothing
+    if (!result.destination || result.destination.index === result.source.index) {
+      console.log("No valid destination or same position, ignoring drag");
+      return;
+    }
+    
+    try {
+      // Get source and destination indices
+      const sourceIndex = result.source.index;
+      const destinationIndex = result.destination.index;
+      
+      console.log(`Moving from index ${sourceIndex} to ${destinationIndex}`);
+      console.log(`Current ordered types:`, orderedEventTypes);
+      
+      // Create a new array of types (important to create a new array to trigger re-render)
+      const newOrderedTypes = Array.from(orderedEventTypes);
+      
+      // Remove the type from the source position
+      const [movedType] = newOrderedTypes.splice(sourceIndex, 1);
+      
+      // Insert the type at the destination position
+      newOrderedTypes.splice(destinationIndex, 0, movedType);
+      
+      console.log(`New ordered types:`, newOrderedTypes);
+      console.log(`Moved type:`, movedType);
+      
+      // Update the state with the new order
+      setOrderedEventTypes(newOrderedTypes);
+      
+      // Show feedback to the user
+      toast.success(`Zmieniono kolejność: ${movedType}`, {
+        duration: 1500,
+        icon: '🔄'
+      });
+      
+      // Also save the new order to localStorage
+      localStorage.setItem('eventTypesOrder', JSON.stringify(newOrderedTypes));
+    } catch (error) {
+      console.error("Error during drag end processing:", error);
+      toast.error("Wystąpił błąd podczas przesuwania elementu. Spróbuj ponownie.");
+    }
+  };
+
+  // Save event type order to localStorage
+  const saveTypeOrder = () => {
+    localStorage.setItem('eventTypesOrder', JSON.stringify(orderedEventTypes));
+    toast.success('Kolejność typów wydarzeń została zapisana', {
+      duration: 2000,
+      icon: '💾'
+    });
+  };
+  
+  // Reset event type order to default
+  const resetTypeOrder = () => {
+    localStorage.removeItem('eventTypesOrder');
+    // Generate default order from events
+    const types = new Set<string>();
+    events.forEach(event => {
+      const typeName = event.typ?.nazwa || 'Nieokreślony typ';
+      types.add(typeName);
+    });
+    
+    setOrderedEventTypes(Array.from(types));
+    toast.success('Kolejność typów wydarzeń została zresetowana');
+  };
+
+  // Handle selection of event type without interfering with drag
+  const handleTypeClick = (type: string, event: React.MouseEvent) => {
+    // Only set selected type if we're not dragging
+    if (!isDragging) {
+      setSelectedEventType(type);
+    }
+    event.stopPropagation();
+  };
 
   // Obsługa usuwania wydarzenia
   const handleDeleteEvent = async (eventId: number) => {
@@ -115,11 +310,73 @@ const EventsList: React.FC = () => {
         case 'rodzic': return 'Rodzic';
         case 'kandydat': return 'Kandydat';
         case 'swiadek': return 'Świadek';
-        default: return role.nazwa;
+        case 'brak': return 'Wszyscy';
+        default: return role.nazwa.charAt(0).toUpperCase() + role.nazwa.slice(1);
       }
     }
     
-    return `Rola ${roleId}`;
+    // Fallback dla nieznanych ról
+    switch(roleId) {
+      case 1: return 'Administrator';
+      case 2: return 'Duszpasterz';
+      case 3: return 'Pracownik kancelarii';
+      case 4: return 'Animator';
+      case 5: return 'Rodzic';
+      case 6: return 'Kandydat';
+      case 7: return 'Świadek';
+      default: return 'Wszyscy';
+    }
+  };
+
+  // Funkcja formatująca nazwę grupy
+  const formatGroupName = (groupName: string): string => {
+    if (!groupName || groupName.trim() === '') return '';
+    
+    // Usuń prefiks "Grupa: " jeśli istnieje
+    let formatted = groupName.replace(/^Grupa:\s*/i, '');
+    
+    // Normalizuj specjalne przypadki
+    switch(formatted.toLowerCase()) {
+      case 'wszyscy':
+      case 'wszystkie':
+      case 'all':
+        return 'Wszyscy';
+      default:
+        // Kapitalizacja pierwszej litery
+        return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    }
+  };
+
+  // Get role badge color based on role
+  const getRoleBadgeColor = (roleId: number): string => {
+    // Return different background colors for different roles
+    switch(roleId) {
+      case 1: return 'bg-purple-900 text-purple-200'; // Administrator
+      case 2: return 'bg-blue-900 text-blue-200';     // Duszpasterz
+      case 3: return 'bg-indigo-900 text-indigo-200'; // Kancelaria
+      case 4: return 'bg-cyan-900 text-cyan-200';     // Animator
+      case 5: return 'bg-teal-900 text-teal-200';     // Rodzic
+      case 6: return 'bg-amber-900 text-amber-200';   // Kandydat
+      case 7: return 'bg-pink-900 text-pink-200';     // Świadek
+      default: return 'bg-gray-900 text-gray-200';    // Wszystkie inne role
+    }
+  };
+
+  // Get group badge color
+  const getGroupBadgeColor = (groupName: string): string => {
+    // Możemy przypisać określone kolory do konkretnych nazw grup
+    const lowerName = groupName.toLowerCase();
+    
+    if (lowerName.includes('wszyscy')) {
+      return 'bg-emerald-900 text-emerald-200';
+    } else if (lowerName.includes('grupa')) {
+      return 'bg-green-900 text-green-200';
+    } else if (lowerName.includes('klasa')) {
+      return 'bg-blue-900 text-blue-200';
+    }
+    
+    // Dla innych przypadków, domyślne kolory
+    return 'bg-emerald-900 text-emerald-200';
   };
 
   if (loading) {
@@ -140,7 +397,9 @@ const EventsList: React.FC = () => {
   }
 
   const eventsByType = getEventsByType();
-  const eventTypes = Object.keys(eventsByType);
+  const eventTypes = orderedEventTypes.length > 0 
+    ? orderedEventTypes 
+    : Object.keys(eventsByType);
   const filteredEventTypes = selectedEventType ? [selectedEventType] : eventTypes;
 
   return (
@@ -155,41 +414,103 @@ const EventsList: React.FC = () => {
         </button>
       </div>
 
-      {/* Filtrowanie według typu wydarzenia */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          onClick={() => setSelectedEventType(null)}
-          className={`px-3 py-1 rounded-full text-sm ${
-            selectedEventType === null
-              ? 'bg-amber-600 text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
-        >
-          Wszystkie typy
-        </button>
-        {eventTypes.map(type => (
+      <div className="bg-gray-800 p-4 rounded-lg mb-6">
+        <div className="flex justify-between items-center mb-3">
+          <div>
+            <p className="text-gray-300">Przeciągnij i upuść typy wydarzeń, aby zmienić ich kolejność wyświetlania:</p>
+            <p className="text-xs text-gray-400 mt-1">
+              <span className="bg-gray-700 px-2 py-0.5 rounded">Wskazówka:</span> Po zmianie kolejności kliknij "Zapisz kolejność", aby zapamiętać ustawienia.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={resetTypeOrder}
+              className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm transition-colors"
+            >
+              Resetuj
+            </button>
+            <button
+              onClick={saveTypeOrder}
+              className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm transition-colors"
+            >
+              Zapisz kolejność
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          {/* "Wszystkie typy" button outside of drag context */}
           <button
-            key={type}
-            onClick={() => setSelectedEventType(type)}
+            onClick={(e) => { e.stopPropagation(); setSelectedEventType(null); }}
             className={`px-3 py-1 rounded-full text-sm ${
-              selectedEventType === type
+              selectedEventType === null
                 ? 'bg-amber-600 text-white'
                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
-            style={{
-              backgroundColor: selectedEventType === type 
-                ? '' 
-                : (eventsByType[type][0].typ?.kolor || '#4B5563')
-            }}
           >
-            {type}
+            Wszystkie typy
           </button>
-        ))}
+          
+          {/* Draggable event types */}
+          <DragDropContext 
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <Droppable droppableId="event-types-droppable" direction="horizontal">
+              {(provided) => (
+                <div 
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className="flex flex-wrap gap-2"
+                >
+                  {eventTypes.map((type, index) => (
+                    <Draggable 
+                      key={`draggable-${index}`} 
+                      draggableId={`draggable-${index}`} 
+                      index={index}
+                    >
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          className={`
+                            event-type-pill relative px-3 py-1 rounded-full text-sm flex items-center shadow-md
+                            ${selectedEventType === type ? 'bg-amber-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}
+                            ${snapshot.isDragging ? 'ring-2 ring-white ring-opacity-70 scale-105 z-10' : ''}
+                          `}
+                          style={{
+                            backgroundColor: selectedEventType === type 
+                              ? '' 
+                              : (eventsByType[type] && eventsByType[type][0]?.typ?.kolor || '#4B5563'),
+                            borderLeft: '3px solid rgba(255,255,255,0.3)',
+                            transform: snapshot.isDragging ? 'rotate(-2deg)' : 'rotate(0)',
+                            transition: 'transform 0.2s, background-color 0.2s',
+                            ...provided.draggableProps.style
+                          }}
+                          onClick={(e) => handleTypeClick(type, e)}
+                        >
+                          <span className="mr-6">{type}</span>
+                          <div 
+                            className="drag-handle absolute right-0 top-0 bottom-0 w-8 flex items-center justify-center cursor-grab hover:bg-gray-600 hover:bg-opacity-30 rounded-r-full"
+                            {...provided.dragHandleProps}
+                          >
+                            <FaGripLines size={14} className="text-gray-300" />
+                          </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        </div>
       </div>
 
       {/* Lista wydarzeń pogrupowanych według typów */}
       <div className="space-y-8">
-        {filteredEventTypes.map(type => (
+        {filteredEventTypes.map((type) => (
           <div
             key={type}
             className="bg-gray-800 rounded-lg shadow-md overflow-hidden"
@@ -197,11 +518,15 @@ const EventsList: React.FC = () => {
             <div className="bg-gray-700 px-4 py-3 flex items-center">
               <span
                 className="w-4 h-4 rounded-full mr-2"
-                style={{ backgroundColor: eventsByType[type][0].typ?.kolor || '#4B5563' }}
+                style={{ backgroundColor: eventsByType[type] && eventsByType[type][0]?.typ?.kolor || '#4B5563' }}
               ></span>
               <h3 className="text-lg font-medium text-amber-400">{type}</h3>
               <span className="ml-2 text-sm text-gray-300">
-                ({eventsByType[type].length} {eventsByType[type].length === 1 ? 'wydarzenie' : eventsByType[type].length < 5 ? 'wydarzenia' : 'wydarzeń'})
+                ({eventsByType[type]?.length || 0} {eventsByType[type]?.length === 1 
+                  ? 'wydarzenie' 
+                  : eventsByType[type]?.length < 5 
+                    ? 'wydarzenia' 
+                    : 'wydarzeń'})
               </span>
             </div>
             
@@ -227,7 +552,7 @@ const EventsList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-gray-800 divide-y divide-gray-700">
-                  {eventsByType[type].map(event => (
+                  {eventsByType[type]?.map(event => (
                     <tr key={event.id} className="hover:bg-gray-700 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                         {event.nazwa}
@@ -237,14 +562,14 @@ const EventsList: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                         <div className="flex flex-wrap gap-1">
-                          {event.dlaroli && event.dlaroli.split(',').map(roleId => {
+                          {event.dlaroli && event.dlaroli.split(',').map((roleId, index) => {
                             const roleIdNum = parseInt(roleId.trim());
                             if (isNaN(roleIdNum)) return null;
                             
                             return (
                               <span
-                                key={roleId}
-                                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-900 text-blue-200"
+                                key={`${event.id}-role-${roleIdNum}-${index}`}
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(roleIdNum)}`}
                               >
                                 {getRoleName(roleIdNum)}
                               </span>
@@ -252,9 +577,9 @@ const EventsList: React.FC = () => {
                           })}
                           {event.dlagrupy && event.dlagrupy.trim() !== '' && (
                             <span
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200"
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getGroupBadgeColor(event.dlagrupy)}`}
                             >
-                              Grupa: {event.dlagrupy}
+                              {formatGroupName(event.dlagrupy)}
                             </span>
                           )}
                         </div>

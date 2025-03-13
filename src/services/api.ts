@@ -399,8 +399,8 @@ export const eventsApi = {
    */
   async getRoles(): Promise<{id: number, nazwa: string}[]> {
     try {
-      console.log('API: Pobieranie ról użytkowników z endpointu /roles/roles');
-      const response = await api.get<ApiResponse<{id: number, nazwa: string}[]>>('/roles/roles');
+      console.log('API: Pobieranie ról użytkowników z endpointu /events/roles');
+      const response = await api.get<ApiResponse<{id: number, nazwa: string}[]>>('/events/roles');
       
       if (!response.data.success) {
         console.warn('API: Błąd w odpowiedzi dla ról:', response.data);
@@ -409,7 +409,12 @@ export const eventsApi = {
       
       const roles = response.data.data || [];
       console.log(`API: Pobrano ${roles.length} ról:`, roles);
-      console.log('API: Odpowiedź z endpointu /roles/roles:', JSON.stringify(response.data));
+      // Sort roles to ensure a consistent order (administrator first, then others)
+      roles.sort((a: {id: number, nazwa: string}, b: {id: number, nazwa: string}) => {
+        if (a.nazwa === 'administrator') return -1;
+        if (b.nazwa === 'administrator') return 1;
+        return a.id - b.id;
+      });
       return roles;
       
     } catch (error: any) {
