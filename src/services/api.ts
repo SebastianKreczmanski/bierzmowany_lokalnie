@@ -652,15 +652,75 @@ export const usersApi = {
       // Upewniamy się, że data urodzenia jest w odpowiednim formacie dla interfejsu (YYYY-MM-DD)
       if (userData.data_urodzenia && typeof userData.data_urodzenia === 'string') {
         try {
-          // Jeśli data jest w formacie MySQL "YYYY-MM-DD HH:MM:SS" lub innym ISO
-          const date = new Date(userData.data_urodzenia);
-          if (!isNaN(date.getTime())) {
-            // Jeśli data jest prawidłowa, formatujemy ją do YYYY-MM-DD
-            userData.data_urodzenia = date.toISOString().split('T')[0];
-            console.log(`API: Sformatowana data urodzenia: ${userData.data_urodzenia}`);
+          // POPRAWKA: Unikamy tworzenia obiektu Date, który może powodować przesunięcie daty
+          // Usuwamy tylko część czasową, jeśli istnieje, zachowując dokładną datę
+          if (userData.data_urodzenia.includes('T')) {
+            // WAŻNA ZMIANA: Dla dat z oznaczeniem czasu (np. "2010-06-17T22:00:00.000Z"),
+            // musimy obsłużyć przesunięcie strefy czasowej
+            
+            // Sprawdź czy data zawiera 'Z' lub offset strefy czasowej (np. +01:00)
+            if (userData.data_urodzenia.includes('Z') || 
+                userData.data_urodzenia.match(/[+-]\d{2}:\d{2}$/)) {
+              // Dla dat UTC (z 'Z' lub offsetem), musimy ręcznie obsłużyć strefę czasową
+              // Wyciągamy tylko datę (bez części czasowej) i dodajemy 1 dzień dla naszej strefy czasowej
+              
+              // Najpierw uzyskujemy części daty z oryginalnej wartości
+              const originalDatePart = userData.data_urodzenia.split('T')[0]; // np. "2010-06-17"
+              const [yearStr, monthStr, dayStr] = originalDatePart.split('-');
+              
+              // Konwertujemy na liczby i korygujemy
+              const year = parseInt(yearStr, 10);
+              const month = parseInt(monthStr, 10);
+              const day = parseInt(dayStr, 10);
+              
+              // Ustalamy poprawną datę, dodając 1 dzień, aby zrekompensować przesunięcie strefy czasowej
+              // Zauważ, że musimy obsłużyć przypadki z końcem miesiąca/roku
+              
+              // Tworzenie poprawionej daty jako string w formacie YYYY-MM-DD
+              // Używamy prostej logiki do dodania jednego dnia - należy obsłużyć koniec miesiąca i roku
+              let correctedDay = day + 1;
+              let correctedMonth = month;
+              let correctedYear = year;
+              
+              // Określamy liczbę dni w miesiącu
+              const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+              // Korekta dla lat przestępnych
+              if ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) {
+                daysInMonth[1] = 29; // Luty ma 29 dni w roku przestępnym
+              }
+              
+              // Sprawdzamy, czy przekroczyliśmy liczbę dni w miesiącu
+              if (correctedDay > daysInMonth[month - 1]) {
+                correctedDay = 1;
+                correctedMonth += 1;
+                
+                // Sprawdzamy, czy przekroczyliśmy liczbę miesięcy w roku
+                if (correctedMonth > 12) {
+                  correctedMonth = 1;
+                  correctedYear += 1;
+                }
+              }
+              
+              // Formatujemy datę z powrotem do YYYY-MM-DD
+              userData.data_urodzenia = `${correctedYear}-${String(correctedMonth).padStart(2, '0')}-${String(correctedDay).padStart(2, '0')}`;
+              console.log(`API: Skorygowano datę ze strefy czasowej: ${originalDatePart} -> ${userData.data_urodzenia}`);
+            } else {
+              // Dla pozostałych dat z 'T', po prostu usuwamy część czasową
+              userData.data_urodzenia = userData.data_urodzenia.split('T')[0];
+              console.log(`API: Usunięto część czasową z daty: ${userData.data_urodzenia}`);
+            }
+          }
+          
+          // Sprawdzamy czy data jest w formacie YYYY-MM-DD i ją zachowujemy bez modyfikacji
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (dateRegex.test(userData.data_urodzenia)) {
+            console.log(`API: Data już w poprawnym formacie: ${userData.data_urodzenia}`);
+          } else {
+            // Jeśli data nie jest w formacie YYYY-MM-DD, logujemy to, ale nie modyfikujemy
+            console.warn(`API: Nieoczekiwany format daty: ${userData.data_urodzenia}`);
           }
         } catch (error) {
-          console.warn(`API: Nie udało się sformatować daty urodzenia: ${userData.data_urodzenia}`, error);
+          console.warn(`API: Nie udało się przetworzyć daty urodzenia: ${userData.data_urodzenia}`, error);
         }
       }
       
@@ -696,16 +756,95 @@ export const usersApi = {
       // Jeśli istnieje data urodzenia, upewnij się, że jest w formacie akceptowanym przez backend
       if (userData.data_urodzenia) {
         try {
-          // Upewnij się, że mamy prawidłowy format daty YYYY-MM-DD
-          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-          if (!dateRegex.test(userData.data_urodzenia)) {
-            // Jeśli nie pasuje do regex, próbuj sformatować
-            const date = new Date(userData.data_urodzenia);
-            if (!isNaN(date.getTime())) {
-              userData.data_urodzenia = date.toISOString().split('T')[0];
+          console.log('Przetwarzanie daty urodzenia przed utworzeniem użytkownika:', userData.data_urodzenia);
+          
+          // Usuń część czasową, jeśli istnieje
+          if (userData.data_urodzenia.includes('T')) {
+            userData.data_urodzenia = userData.data_urodzenia.split('T')[0];
+            console.log('Usunięto część czasową z daty:', userData.data_urodzenia);
+          }
+          
+          // Sprawdź czy data jest już w formacie YYYY-MM-DD (format bazy danych)
+          const dbFormatRegex = /^\d{4}-\d{2}-\d{2}$/;
+          
+          // Sprawdź czy data jest w formacie YYYY.MM.DD (format wyświetlania)
+          const displayFormatRegex = /^(\d{4})\.(\d{2})\.(\d{2})$/;
+          
+          if (dbFormatRegex.test(userData.data_urodzenia)) {
+            // Data już w formacie bazy danych, nie wymaga konwersji
+            console.log('Data urodzenia już w formacie bazy danych YYYY-MM-DD:', userData.data_urodzenia);
+          } else if (displayFormatRegex.test(userData.data_urodzenia)) {
+            // Konwertuj z formatu wyświetlania YYYY.MM.DD na format bazy danych YYYY-MM-DD
+            // bezpośrednio zamieniając kropki na myślniki, bez używania obiektu Date
+            const match = userData.data_urodzenia.match(displayFormatRegex);
+            if (match) {
+              const year = match[1];
+              const month = match[2];
+              const day = match[3];
+              
+              // Sprawdź zakres wartości
+              const yearNum = parseInt(year, 10);
+              const monthNum = parseInt(month, 10);
+              const dayNum = parseInt(day, 10);
+              
+              if (yearNum >= 1900 && yearNum <= 2100 && 
+                  monthNum >= 1 && monthNum <= 12 && 
+                  dayNum >= 1 && dayNum <= 31) {
+                
+                // Prosta konwersja do formatu YYYY-MM-DD przez zamianę kropek na myślniki
+                userData.data_urodzenia = userData.data_urodzenia.replace(/\./g, '-');
+                console.log('Skonwertowano datę z formatu YYYY.MM.DD na YYYY-MM-DD:', userData.data_urodzenia);
+                
+                // Sprawdzamy czy data istnieje w kalendarzu
+                const isLeapYear = (yearNum % 4 === 0 && yearNum % 100 !== 0) || yearNum % 400 === 0;
+                if ((monthNum === 2 && dayNum > 29) || 
+                    (monthNum === 2 && dayNum === 29 && !isLeapYear) ||
+                    ([4, 6, 9, 11].includes(monthNum) && dayNum > 30)) {
+                  console.warn('Nieprawidłowa data (nie istnieje w kalendarzu):', userData.data_urodzenia);
+                  delete userData.data_urodzenia;
+                }
+              } else {
+                console.warn('Nieprawidłowe wartości daty (poza zakresem):', userData.data_urodzenia);
+                delete userData.data_urodzenia;
+              }
+            }
+          } else {
+            // Sprawdź, czy to format DD.MM.YYYY
+            const reversedDateRegex = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+            const reversedMatch = userData.data_urodzenia.match(reversedDateRegex);
+            
+            if (reversedMatch) {
+              const day = reversedMatch[1];
+              const month = reversedMatch[2];
+              const year = reversedMatch[3];
+              
+              // Sprawdź zakres wartości
+              const yearNum = parseInt(year, 10);
+              const monthNum = parseInt(month, 10);
+              const dayNum = parseInt(day, 10);
+              
+              if (yearNum >= 1900 && yearNum <= 2100 && 
+                  monthNum >= 1 && monthNum <= 12 && 
+                  dayNum >= 1 && dayNum <= 31) {
+                  
+                // Zamień format DD.MM.YYYY na YYYY-MM-DD bez używania Date
+                userData.data_urodzenia = `${year}-${month}-${day}`;
+                console.log('Skonwertowano datę z formatu DD.MM.YYYY na YYYY-MM-DD:', userData.data_urodzenia);
+                
+                // Sprawdzamy czy data istnieje w kalendarzu
+                const isLeapYear = (yearNum % 4 === 0 && yearNum % 100 !== 0) || yearNum % 400 === 0;
+                if ((monthNum === 2 && dayNum > 29) || 
+                    (monthNum === 2 && dayNum === 29 && !isLeapYear) ||
+                    ([4, 6, 9, 11].includes(monthNum) && dayNum > 30)) {
+                  console.warn('Nieprawidłowa data (nie istnieje w kalendarzu):', userData.data_urodzenia);
+                  delete userData.data_urodzenia;
+                }
+              } else {
+                console.warn('Nieprawidłowe wartości daty (poza zakresem):', userData.data_urodzenia);
+                delete userData.data_urodzenia;
+              }
             } else {
-              // Jeśli nie można sformatować, usuń tę wartość
-              console.warn('API: Nieprawidłowy format daty urodzenia, usuwam tę wartość');
+              console.warn('Nierozpoznany format daty, usuwam tę wartość:', userData.data_urodzenia);
               delete userData.data_urodzenia;
             }
           }
@@ -713,9 +852,16 @@ export const usersApi = {
           console.warn('API: Błąd podczas przetwarzania daty urodzenia:', error);
           delete userData.data_urodzenia;
         }
+      } else if (userData.data_urodzenia === '') {
+        // Jeśli data urodzenia jest pustym stringiem, ustaw ją na null, aby wyczyścić w bazie danych
+        userData.data_urodzenia = null;
       }
-
-      console.log('API: Wysyłanie żądania do /users z datą urodzenia:', userData.data_urodzenia);
+      
+      console.log('Finalne dane przed wysłaniem:', {
+        ...userData,
+        password: userData.password ? '[MASKED]' : undefined
+      });
+      
       const response = await api.post<ApiResponse<{id: number}>>('/users', userData);
       
       if (!response.data.success) {
@@ -767,89 +913,94 @@ export const usersApi = {
         try {
           console.log('Przetwarzanie daty urodzenia przed wysłaniem:', userData.data_urodzenia);
           
-          // Dla MySQL DATE typu potrzebujemy dokładnie YYYY-MM-DD bez czasu
-          // Usuń wszelkie części związane z czasem, jeśli istnieją
+          // Usuń część czasową, jeśli istnieje
           if (userData.data_urodzenia.includes('T')) {
             userData.data_urodzenia = userData.data_urodzenia.split('T')[0];
             console.log('Usunięto część czasową z daty:', userData.data_urodzenia);
           }
           
-          // Upewnij się, że mamy prawidłowy format daty YYYY-MM-DD
-          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-          if (!dateRegex.test(userData.data_urodzenia)) {
-            // Jeśli nie pasuje do regex, próbuj sformatować
-            // Obsłuż różne formaty daty
-            let date;
-            
-            // Sprawdź czy data jest typu Date
-            if (userData.data_urodzenia instanceof Date) {
-              date = userData.data_urodzenia;
-            } else {
-              // Spróbuj kilka formatów daty
-              try {
-                // Spróbuj standardowej konwersji
-                date = new Date(userData.data_urodzenia);
+          // Sprawdź czy data jest już w formacie YYYY-MM-DD (format bazy danych)
+          const dbFormatRegex = /^\d{4}-\d{2}-\d{2}$/;
+          
+          // Sprawdź czy data jest w formacie YYYY.MM.DD (format wyświetlania)
+          const displayFormatRegex = /^(\d{4})\.(\d{2})\.(\d{2})$/;
+          
+          if (dbFormatRegex.test(userData.data_urodzenia)) {
+            // Data już w formacie bazy danych, nie wymaga konwersji
+            console.log('Data urodzenia już w formacie bazy danych YYYY-MM-DD:', userData.data_urodzenia);
+          } else if (displayFormatRegex.test(userData.data_urodzenia)) {
+            // Konwertuj z formatu wyświetlania YYYY.MM.DD na format bazy danych YYYY-MM-DD
+            // bezpośrednio zamieniając kropki na myślniki, bez używania obiektu Date
+            const match = userData.data_urodzenia.match(displayFormatRegex);
+            if (match) {
+              const year = match[1];
+              const month = match[2];
+              const day = match[3];
+              
+              // Sprawdź zakres wartości
+              const yearNum = parseInt(year, 10);
+              const monthNum = parseInt(month, 10);
+              const dayNum = parseInt(day, 10);
+              
+              if (yearNum >= 1900 && yearNum <= 2100 && 
+                  monthNum >= 1 && monthNum <= 12 && 
+                  dayNum >= 1 && dayNum <= 31) {
                 
-                // Jeśli data jest nieprawidłowa, spróbuj innych formatów
-                if (isNaN(date.getTime())) {
-                  // Sprawdź, czy to format DD.MM.YYYY
-                  const ddmmyyyy = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
-                  const match = userData.data_urodzenia.match(ddmmyyyy);
-                  if (match) {
-                    // Użyj wartości z regex match do utworzenia daty
-                    // Upewnij się, że miesiąc i dzień mają dwie cyfry
-                    const day = match[1].padStart(2, '0');
-                    const month = match[2].padStart(2, '0');
-                    const year = match[3];
-                    
-                    // Zapisz datę w formacie YYYY-MM-DD (bez tworzenia obiektu Date)
-                    userData.data_urodzenia = `${year}-${month}-${day}`;
-                    console.log('Skonwertowana data z formatu DD.MM.YYYY:', userData.data_urodzenia);
-                    
-                    // Dodatkowo sprawdź, czy data jest prawidłowa
-                    const validationDate = new Date(`${year}-${month}-${day}`);
-                    if (isNaN(validationDate.getTime())) {
-                      console.warn('Nieprawidłowa data po konwersji:', userData.data_urodzenia);
-                      delete userData.data_urodzenia;
-                    }
-                  } else {
-                    console.warn('Nierozpoznany format daty:', userData.data_urodzenia);
-                    delete userData.data_urodzenia;
-                  }
-                } else {
-                  // Mamy prawidłowy obiekt Date, sformatujmy go do YYYY-MM-DD
-                  const year = date.getFullYear();
-                  const month = String(date.getMonth() + 1).padStart(2, '0');
-                  const day = String(date.getDate()).padStart(2, '0');
-                  userData.data_urodzenia = `${year}-${month}-${day}`;
-                  console.log('Sformatowana data urodzenia z obiektu Date:', userData.data_urodzenia);
+                // Prosta konwersja do formatu YYYY-MM-DD przez zamianę kropek na myślniki
+                userData.data_urodzenia = userData.data_urodzenia.replace(/\./g, '-');
+                console.log('Skonwertowano datę z formatu YYYY.MM.DD na YYYY-MM-DD:', userData.data_urodzenia);
+                
+                // Sprawdzamy czy data istnieje w kalendarzu
+                const isLeapYear = (yearNum % 4 === 0 && yearNum % 100 !== 0) || yearNum % 400 === 0;
+                if ((monthNum === 2 && dayNum > 29) || 
+                    (monthNum === 2 && dayNum === 29 && !isLeapYear) ||
+                    ([4, 6, 9, 11].includes(monthNum) && dayNum > 30)) {
+                  console.warn('Nieprawidłowa data (nie istnieje w kalendarzu):', userData.data_urodzenia);
+                  delete userData.data_urodzenia;
                 }
-              } catch (err) {
-                console.error('Błąd podczas parsowania daty:', err);
+              } else {
+                console.warn('Nieprawidłowe wartości daty (poza zakresem):', userData.data_urodzenia);
                 delete userData.data_urodzenia;
               }
             }
           } else {
-            console.log('Data urodzenia już w formacie YYYY-MM-DD:', userData.data_urodzenia);
+            // Sprawdź, czy to format DD.MM.YYYY
+            const reversedDateRegex = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+            const reversedMatch = userData.data_urodzenia.match(reversedDateRegex);
             
-            // Dodatkowe sprawdzenie czy data jest prawidłowa - sprawdź wartości
-            const [year, month, day] = userData.data_urodzenia.split('-').map(Number);
-            const isValidDate = (
-              year >= 1900 && year <= 2100 &&
-              month >= 1 && month <= 12 &&
-              day >= 1 && day <= 31
-            );
-            
-            if (!isValidDate) {
-              console.warn('Nieprawidłowe wartości w dacie:', userData.data_urodzenia);
-              delete userData.data_urodzenia;
-            } else {
-              // Sprawdź czy data jest prawidłowa w sensie istnienia (np. 30 lutego nie istnieje)
-              const testDate = new Date(userData.data_urodzenia);
-              if (isNaN(testDate.getTime())) {
-                console.warn('Data w prawidłowym formacie, ale nieprawidłowa data, usuwam tę wartość');
+            if (reversedMatch) {
+              const day = reversedMatch[1];
+              const month = reversedMatch[2];
+              const year = reversedMatch[3];
+              
+              // Sprawdź zakres wartości
+              const yearNum = parseInt(year, 10);
+              const monthNum = parseInt(month, 10);
+              const dayNum = parseInt(day, 10);
+              
+              if (yearNum >= 1900 && yearNum <= 2100 && 
+                  monthNum >= 1 && monthNum <= 12 && 
+                  dayNum >= 1 && dayNum <= 31) {
+                  
+                // Zamień format DD.MM.YYYY na YYYY-MM-DD bez używania Date
+                userData.data_urodzenia = `${year}-${month}-${day}`;
+                console.log('Skonwertowano datę z formatu DD.MM.YYYY na YYYY-MM-DD:', userData.data_urodzenia);
+                
+                // Sprawdzamy czy data istnieje w kalendarzu
+                const isLeapYear = (yearNum % 4 === 0 && yearNum % 100 !== 0) || yearNum % 400 === 0;
+                if ((monthNum === 2 && dayNum > 29) || 
+                    (monthNum === 2 && dayNum === 29 && !isLeapYear) ||
+                    ([4, 6, 9, 11].includes(monthNum) && dayNum > 30)) {
+                  console.warn('Nieprawidłowa data (nie istnieje w kalendarzu):', userData.data_urodzenia);
+                  delete userData.data_urodzenia;
+                }
+              } else {
+                console.warn('Nieprawidłowe wartości daty (poza zakresem):', userData.data_urodzenia);
                 delete userData.data_urodzenia;
               }
+            } else {
+              console.warn('Nierozpoznany format daty, usuwam tę wartość:', userData.data_urodzenia);
+              delete userData.data_urodzenia;
             }
           }
         } catch (error) {

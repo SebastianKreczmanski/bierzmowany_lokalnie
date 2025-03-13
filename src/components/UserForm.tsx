@@ -10,6 +10,11 @@ import KandydatSwiadekForm from './KandydatSwiadekForm';
 import KandydatImieBierzmowaniaForm from './KandydatImieBierzmowaniaForm';
 import KandydatSzkolaForm from './KandydatSzkolaForm';
 
+// Helper function to check if a year is a leap year
+const isLeapYear = (year: number): boolean => {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+};
+
 // Define AdresFormData interface here
 interface AdresFormData {
   miejscowosc_id: number | null;
@@ -55,7 +60,7 @@ const UserForm: React.FC<UserFormProps> = ({
   const [birthDate, setBirthDate] = useState(() => {
     console.log('Inicjalizacja daty urodzenia, wartość z API:', initialData?.data_urodzenia);
     
-    // Jeśli data istnieje, upewnij się, że jest w prawidłowym formacie YYYY-MM-DD
+    // Jeśli data istnieje, upewnij się, że jest w prawidłowym formacie YYYY.MM.DD dla wyświetlania
     if (initialData?.data_urodzenia) {
       try {
         // Usuń część czasową, jeśli istnieje (może pochodzić z API jako ISO string)
@@ -65,59 +70,56 @@ const UserForm: React.FC<UserFormProps> = ({
           console.log('Usunięto część czasową z daty:', dateValue);
         }
         
-        // Sprawdź, czy data jest już w formacie YYYY-MM-DD
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (dateRegex.test(dateValue)) {
-          // Dodatkowo sprawdź, czy data jest prawidłowa
-          const testDate = new Date(dateValue);
-          if (!isNaN(testDate.getTime())) {
-            console.log('Data urodzenia już w poprawnym formacie:', dateValue);
-            return dateValue;
-          } else {
-            console.warn('Data w formacie YYYY-MM-DD, ale nieprawidłowa:', dateValue);
-          }
+        // NAJWAŻNIEJSZA ZMIANA: używamy tylko prostej konwersji stringów, bez Date objects
+        // Sprawdź czy to format YYYY-MM-DD (format z bazy danych MySQL)
+        const dbFormatRegex = /^(\d{4})-(\d{2})-(\d{2})$/;
+        const dbFormatMatch = dateValue.match(dbFormatRegex);
+        
+        if (dbFormatMatch) {
+          // Konwertuj z formatu bazy danych (YYYY-MM-DD) na format wyświetlania (YYYY.MM.DD)
+          // Używamy bezpośrednio wartości z regex match, bez tworzenia obiektów Date
+          const year = dbFormatMatch[1];
+          const month = dbFormatMatch[2];
+          const day = dbFormatMatch[3];
+          const displayFormat = `${year}.${month}.${day}`;
+          console.log('Skonwertowano datę z formatu YYYY-MM-DD na YYYY.MM.DD dla wyświetlenia:', displayFormat);
+          return displayFormat;
         }
         
-        // Spróbuj przekonwertować datę na format YYYY-MM-DD
-        const date = new Date(dateValue);
-        if (!isNaN(date.getTime())) {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          const formattedDate = `${year}-${month}-${day}`;
-          console.log('Sformatowana data urodzenia:', formattedDate);
-          return formattedDate;
-        } else {
-          console.warn('Nieprawidłowa data urodzenia z API:', dateValue);
-          
-          // Spróbuj innych formatów
-          // Sprawdź, czy to format DD.MM.YYYY
-          if (typeof dateValue === 'string') {
-            const ddmmyyyy = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
-            const match = dateValue.match(ddmmyyyy);
-            if (match) {
-              const day = match[1].padStart(2, '0');
-              const month = match[2].padStart(2, '0');
-              const year = match[3];
-              const formattedDate = `${year}-${month}-${day}`;
-              
-              // Sprawdź, czy data jest prawidłowa
-              const testDate = new Date(formattedDate);
-              if (!isNaN(testDate.getTime())) {
-                console.log('Sformatowana data z formatu DD.MM.YYYY:', formattedDate);
-                return formattedDate;
-              } else {
-                console.warn('Nieprawidłowa data po konwersji z DD.MM.YYYY:', formattedDate);
-              }
-            }
-          }
+        // Sprawdź, czy data jest już w formacie YYYY.MM.DD (format wyświetlania)
+        const displayFormatRegex = /^\d{4}\.\d{2}\.\d{2}$/;
+        if (displayFormatRegex.test(dateValue)) {
+          console.log('Data urodzenia już w poprawnym formacie wyświetlania (YYYY.MM.DD):', dateValue);
+          return dateValue;
         }
+        
+        // Format DD.MM.YYYY
+        const reversedDateRegex = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+        const reversedMatch = dateValue.match(reversedDateRegex);
+        if (reversedMatch) {
+          const day = reversedMatch[1];
+          const month = reversedMatch[2];
+          const year = reversedMatch[3];
+          const displayFormat = `${year}.${month}.${day}`;
+          console.log('Skonwertowano datę z formatu DD.MM.YYYY na YYYY.MM.DD dla wyświetlenia:', displayFormat);
+          return displayFormat;
+        }
+        
+        // Jako ostateczność, jeśli nie rozpoznano formatu, logujemy błąd
+        console.warn('Nierozpoznany format daty urodzenia z API:', dateValue);
       } catch (e) {
         console.error('Błąd podczas formatowania daty urodzenia:', e);
       }
     }
     return '';  // Zwróć pusty string jako wartość domyślna, gdy nie ma daty
   });
+  
+  // Dodajemy stan do zarządzania aktualizacją daty
+  const [isSavingBirthDate, setIsSavingBirthDate] = useState(false);
+  const [birthDateError, setBirthDateError] = useState<string | null>(null);
+  // Dodajemy stan do śledzenia modyfikacji daty urodzenia
+  const [birthDateModified, setBirthDateModified] = useState(false);
+  
   const [email, setEmail] = useState(initialData?.email || '');
   const [phone, setPhone] = useState(initialData?.telefon || '');
   
@@ -291,7 +293,109 @@ const UserForm: React.FC<UserFormProps> = ({
   const handleBirthDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     console.log('Zmiana daty urodzenia:', value);
-    setBirthDate(value);
+    
+    // Podstawowe sprawdzenie formatu - akceptuje tylko cyfry i separatory
+    if (value === '' || /^[\d\.\-]*$/.test(value)) {
+      // Porównujemy z początkową wartością, aby ustalić czy data została zmodyfikowana
+      const originalBirthDate = initialData?.data_urodzenia ? (() => {
+        // Używamy tego samego kodu co w stanie initial dla porównania
+        let dateValue = initialData.data_urodzenia;
+        if (dateValue.includes('T')) {
+          dateValue = dateValue.split('T')[0];
+        }
+        
+        const dbFormatRegex = /^(\d{4})-(\d{2})-(\d{2})$/;
+        const dbFormatMatch = dateValue.match(dbFormatRegex);
+        
+        if (dbFormatMatch) {
+          const year = dbFormatMatch[1];
+          const month = dbFormatMatch[2];
+          const day = dbFormatMatch[3];
+          return `${year}.${month}.${day}`;
+        }
+        return dateValue;
+      })() : '';
+      
+      // Sprawdzamy czy wartość jest różna od oryginalnej
+      setBirthDateModified(value !== originalBirthDate);
+      setBirthDate(value);
+      // Resetuj błąd daty przy każdej zmianie
+      setBirthDateError(null);
+    
+      // Autouzupełnianie kropek dla formatu YYYY.MM.DD
+      if (/^\d{4}$/.test(value)) {
+        setBirthDate(value + '.');
+        setBirthDateModified(true);
+      } else if (/^\d{4}\.\d{2}$/.test(value)) {
+        setBirthDate(value + '.');
+        setBirthDateModified(true);
+      }
+    }
+  };
+  
+  // Funkcja do zapisywania tylko daty urodzenia
+  const handleSaveBirthDate = async () => {
+    // Weryfikacja, czy mamy ID użytkownika
+    if (!initialData?.id) {
+      setBirthDateError('Nie można zaktualizować daty - brak ID użytkownika');
+      return;
+    }
+    
+    setIsSavingBirthDate(true);
+    setBirthDateError(null);
+    
+    try {
+      // Formatowanie daty urodzenia, jeśli została wprowadzona
+      let formattedBirthDate = null;
+      
+      if (birthDate) {
+        // Sprawdź, czy to format YYYY.MM.DD (preferowany format wyświetlania)
+        const yyyymmddDotsRegex = /^(\d{4})\.(\d{2})\.(\d{2})$/;
+        const yyyymmddMatch = birthDate.match(yyyymmddDotsRegex);
+        
+        if (yyyymmddMatch) {
+          const year = parseInt(yyyymmddMatch[1], 10);
+          const month = parseInt(yyyymmddMatch[2], 10);
+          const day = parseInt(yyyymmddMatch[3], 10);
+          
+          // Sprawdź zakres wartości
+          if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
+            // Prosta konwersja do formatu YYYY-MM-DD (format bazy danych MySQL)
+            formattedBirthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            console.log('Skonwertowano datę z formatu YYYY.MM.DD na YYYY-MM-DD dla bazy danych:', formattedBirthDate);
+            
+            // Prosta walidacja, czy data istnieje w kalendarzu
+            if ((month === 2 && day > 29) || 
+                (month === 2 && day === 29 && !isLeapYear(year)) || 
+                ((month === 4 || month === 6 || month === 9 || month === 11) && day > 30)) {
+              throw new Error(`Data ${birthDate} nie istnieje w kalendarzu`);
+            }
+          } else {
+            throw new Error(`Nieprawidłowe wartości daty: ${birthDate}`);
+          }
+        } else {
+          throw new Error(`Nieprawidłowy format daty: ${birthDate}. Wymagany format: RRRR.MM.DD`);
+        }
+      }
+      
+      // Wywołanie API tylko z aktualizacją daty urodzenia
+      await usersApi.updateUser(initialData.id, {
+        data_urodzenia: formattedBirthDate
+      });
+      
+      // Pokaż powiadomienie o sukcesie
+      toast.success('Data urodzenia została zaktualizowana');
+      
+      // Reset stanu modyfikacji daty po zapisie
+      setBirthDateModified(false);
+      
+    } catch (err: any) {
+      console.error('Błąd aktualizacji daty urodzenia:', err);
+      setBirthDateError(err.message || 'Nieprawidłowy format daty urodzenia. Wymagany format: RRRR.MM.DD');
+      toast.error('Błąd aktualizacji daty urodzenia: ' + (err.message || 'Nieznany błąd'));
+    } finally {
+      setIsSavingBirthDate(false);
+    }
   };
   
   // Sprawdzanie poprawności formularza
@@ -354,7 +458,7 @@ const UserForm: React.FC<UserFormProps> = ({
           ulica_id: addressData.ulica_id,
           nr_budynku: addressData.nr_budynku,
           nr_lokalu: addressData.nr_lokalu || null,
-          kod_pocztowy: addressData.kod_pocztowy || null
+          miejscowosc_id: addressData.miejscowosc_id
         };
       }
       
@@ -364,7 +468,9 @@ const UserForm: React.FC<UserFormProps> = ({
         try {
           console.log('Przetwarzanie daty urodzenia przed wysłaniem:', birthDate);
           
-          // Sprawdź, czy to format YYYY.MM.DD (preferowany format)
+          // Prosta bezpośrednia konwersja string-to-string bez użycia Date objects
+          
+          // Sprawdź, czy to format YYYY.MM.DD (preferowany format wyświetlania)
           const yyyymmddDotsRegex = /^(\d{4})\.(\d{2})\.(\d{2})$/;
           const yyyymmddMatch = birthDate.match(yyyymmddDotsRegex);
           
@@ -375,16 +481,16 @@ const UserForm: React.FC<UserFormProps> = ({
             
             // Sprawdź zakres wartości
             if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
+              // Prosta konwersja do formatu YYYY-MM-DD (format bazy danych MySQL)
+              // bez używania żadnych obiektów Date
               formattedBirthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              console.log('Sformatowana data z formatu YYYY.MM.DD na YYYY-MM-DD dla bazy:', formattedBirthDate);
+              console.log('Skonwertowano datę z formatu YYYY.MM.DD na YYYY-MM-DD dla bazy danych:', formattedBirthDate);
               
-              // Sprawdź, czy data faktycznie istnieje (np. 30 lutego nie istnieje)
-              const checkDate = new Date(formattedBirthDate);
-              if (isNaN(checkDate.getTime()) || 
-                  checkDate.getFullYear() !== year || 
-                  checkDate.getMonth() + 1 !== month || 
-                  checkDate.getDate() !== day) {
-                console.warn('Przekonwertowana data jest nieprawidłowa:', formattedBirthDate);
+              // Prosta walidacja, czy data istnieje w kalendarzu
+              if ((month === 2 && day > 29) || 
+                  (month === 2 && day === 29 && !isLeapYear(year)) || 
+                  ((month === 4 || month === 6 || month === 9 || month === 11) && day > 30)) {
+                console.warn('Nieprawidłowa data (nie istnieje w kalendarzu):', formattedBirthDate);
                 formattedBirthDate = null;
                 throw new Error(`Data ${birthDate} nie istnieje w kalendarzu`);
               }
@@ -393,71 +499,41 @@ const UserForm: React.FC<UserFormProps> = ({
               throw new Error(`Nieprawidłowe wartości daty: ${birthDate}`);
             }
           } else {
-            // Sprawdź, czy to format DD.MM.YYYY
-            const ddmmyyyyRegex = /^(\d{2})\.(\d{2})\.(\d{4})$/;
-            const ddmmMatch = birthDate.match(ddmmyyyyRegex);
+            // Sprawdź, czy to format YYYY-MM-DD (format bazy danych) i przekonwertuj
+            const yyyymmddHyphenRegex = /^(\d{4})-(\d{2})-(\d{2})$/;
+            const yyyymmddHyphenMatch = birthDate.match(yyyymmddHyphenRegex);
             
-            if (ddmmMatch) {
-              const day = parseInt(ddmmMatch[1], 10);
-              const month = parseInt(ddmmMatch[2], 10);
-              const year = parseInt(ddmmMatch[3], 10);
+            if (yyyymmddHyphenMatch) {
+              const year = parseInt(yyyymmddHyphenMatch[1], 10);
+              const month = parseInt(yyyymmddHyphenMatch[2], 10);
+              const day = parseInt(yyyymmddHyphenMatch[3], 10);
               
               // Sprawdź zakres wartości
               if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
-                formattedBirthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                console.log('Sformatowana data z formatu DD.MM.YYYY na YYYY-MM-DD dla bazy:', formattedBirthDate);
+                // Już jest w formacie bazy danych
+                formattedBirthDate = birthDate;
+                console.log('Data już w formacie YYYY-MM-DD dla bazy danych:', formattedBirthDate);
                 
-                // Sprawdź, czy data faktycznie istnieje
-                const checkDate = new Date(formattedBirthDate);
-                if (isNaN(checkDate.getTime()) || 
-                    checkDate.getFullYear() !== year || 
-                    checkDate.getMonth() + 1 !== month || 
-                    checkDate.getDate() !== day) {
-                  console.warn('Przekonwertowana data jest nieprawidłowa:', formattedBirthDate);
+                // Prosta walidacja, czy data istnieje w kalendarzu
+                if ((month === 2 && day > 29) || 
+                    (month === 2 && day === 29 && !isLeapYear(year)) || 
+                    ((month === 4 || month === 6 || month === 9 || month === 11) && day > 30)) {
+                  console.warn('Nieprawidłowa data (nie istnieje w kalendarzu):', formattedBirthDate);
                   formattedBirthDate = null;
                   throw new Error(`Data ${birthDate} nie istnieje w kalendarzu`);
                 }
               } else {
-                console.warn('Nieprawidłowe wartości dnia, miesiąca lub roku:', birthDate);
+                console.warn('Nieprawidłowe wartości daty:', birthDate);
                 throw new Error(`Nieprawidłowe wartości daty: ${birthDate}`);
               }
             } else {
-              // Jeśli to nie jest format YYYY.MM.DD ani DD.MM.YYYY, spróbuj YYYY-MM-DD
-              const yyyymmddHyphenRegex = /^(\d{4})-(\d{2})-(\d{2})$/;
-              const yyyymmddHyphenMatch = birthDate.match(yyyymmddHyphenRegex);
-              
-              if (yyyymmddHyphenMatch) {
-                const year = parseInt(yyyymmddHyphenMatch[1], 10);
-                const month = parseInt(yyyymmddHyphenMatch[2], 10);
-                const day = parseInt(yyyymmddHyphenMatch[3], 10);
-                
-                // Sprawdź zakres wartości
-                if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
-                  formattedBirthDate = birthDate;
-                  console.log('Data już w formacie YYYY-MM-DD dla bazy:', formattedBirthDate);
-                  
-                  // Sprawdź, czy data faktycznie istnieje
-                  const checkDate = new Date(formattedBirthDate);
-                  if (isNaN(checkDate.getTime()) || 
-                      checkDate.getFullYear() !== year || 
-                      checkDate.getMonth() + 1 !== month || 
-                      checkDate.getDate() !== day) {
-                    console.warn('Data jest nieprawidłowa:', formattedBirthDate);
-                    formattedBirthDate = null;
-                    throw new Error(`Data ${birthDate} nie istnieje w kalendarzu`);
-                  }
-                } else {
-                  console.warn('Nieprawidłowe wartości daty:', birthDate);
-                  throw new Error(`Nieprawidłowe wartości daty: ${birthDate}`);
-                }
-              } else {
-                throw new Error(`Nieprawidłowy format daty: ${birthDate}. Wymagany format: RRRR.MM.DD`);
-              }
+              throw new Error(`Nieprawidłowy format daty: ${birthDate}. Wymagany format: RRRR.MM.DD`);
             }
           }
-        } catch (e: any) {
-          console.error('Błąd podczas formatowania daty urodzenia:', e);
-          setError(e.message || 'Nieprawidłowy format daty urodzenia. Wymagany format: RRRR.MM.DD');
+        } catch (err: any) {
+          console.error('Błąd podczas formatowania daty urodzenia:', err);
+          setError(err.message || 'Nieprawidłowy format daty urodzenia. Wymagany format: RRRR.MM.DD');
+          setLoading(false);
           return; // Przerwij przesyłanie formularza w przypadku błędu daty
         }
       }
@@ -670,17 +746,48 @@ const UserForm: React.FC<UserFormProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-1">
             Data urodzenia
           </label>
-          <input
-            type="text"
-            value={birthDate}
-            onChange={handleBirthDateChange}
-            disabled={loading}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            placeholder="RRRR.MM.DD"
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            Format: RRRR.MM.DD (np. 2010.06.28)
-          </p>
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={birthDate}
+                onChange={handleBirthDateChange}
+                disabled={loading || isSavingBirthDate}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="RRRR.MM.DD"
+              />
+            </div>
+            
+            {isEditMode && initialData?.id && birthDateModified && (
+              <button
+                type="button"
+                onClick={handleSaveBirthDate}
+                disabled={loading || isSavingBirthDate}
+                className="px-3 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingBirthDate ? (
+                  <>
+                    <span className="animate-spin mr-1">&#8635;</span>
+                    Zapisuję...
+                  </>
+                ) : (
+                  'Zapisz zmianę daty'
+                )}
+              </button>
+            )}
+          </div>
+          
+          <div className="mt-1">
+            <p className="text-xs text-gray-400">
+              Format: RRRR.MM.DD (np. 2010.06.28)
+            </p>
+            
+            {birthDateError && (
+              <p className="text-xs text-red-400 mt-1">
+                {birthDateError}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     );
