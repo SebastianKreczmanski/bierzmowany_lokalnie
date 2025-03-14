@@ -110,9 +110,16 @@ router.post('/address', auth.verifyToken, async (req, res) => {
 router.get('/address/:id', auth.verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Pobieranie szczegółów adresu ID: ${id}`);
     
     const query = `
-      SELECT a.*, u.nazwa as ulica_nazwa, m.nazwa as miejscowosc_nazwa
+      SELECT 
+        a.*,
+        u.id as ulica_id,
+        u.nazwa as ulica_nazwa,
+        u.miejscowosc_id,
+        m.id as miejscowosc_id,
+        m.nazwa as miejscowosc_nazwa
       FROM adresy a
       JOIN ulice u ON a.ulica_id = u.id
       JOIN miejscowosci m ON u.miejscowosc_id = m.id
@@ -122,11 +129,24 @@ router.get('/address/:id', auth.verifyToken, async (req, res) => {
     const address = await db.query(query, [id]);
     
     if (!address || address.length === 0) {
+      console.error(`Adres o ID ${id} nie istnieje`);
       return res.status(404).json({
         success: false,
         message: `Adres o ID ${id} nie istnieje`
       });
     }
+    
+    // Log the full data with key fields for debugging
+    console.log(`Znaleziono dane adresu ID ${id}:`, {
+      id: address[0].id,
+      ulica_id: address[0].ulica_id,
+      ulica_nazwa: address[0].ulica_nazwa,
+      miejscowosc_id: address[0].miejscowosc_id,
+      miejscowosc_nazwa: address[0].miejscowosc_nazwa,
+      nr_budynku: address[0].nr_budynku,
+      nr_lokalu: address[0].nr_lokalu,
+      kod_pocztowy: address[0].kod_pocztowy
+    });
     
     res.json({
       success: true,

@@ -190,8 +190,34 @@ router.post('/', async (req, res) => {
       }
       
       // Add address if provided
-      if (adres) {
-        // TODO: Implement address handling
+      if (adres && typeof adres === 'object') {
+        // Check if needed fields are provided for address
+        if (adres.ulica_id && adres.nr_budynku && adres.kod_pocztowy) {
+          // Create new address
+          const insertAdresQuery = `
+            INSERT INTO adresy (ulica_id, nr_budynku, nr_lokalu, kod_pocztowy)
+            VALUES (?, ?, ?, ?)
+          `;
+          
+          const adresResult = await db.query(insertAdresQuery, [
+            adres.ulica_id,
+            adres.nr_budynku,
+            adres.nr_lokalu || null,
+            adres.kod_pocztowy
+          ]);
+          
+          const adresId = adresResult.insertId;
+          
+          // Add entry to junction table
+          await db.query(
+            'INSERT INTO adresy_user (user_id, adres_id) VALUES (?, ?)',
+            [userId, adresId]
+          );
+          
+          console.log('Utworzono nowy adres:', adresId, 'i powiązano z użytkownikiem:', userId);
+        } else {
+          console.warn('Niepełne dane adresu, pomijam tworzenie adresu');
+        }
       }
       
       // Commit the transaction
@@ -226,18 +252,47 @@ router.get('/:id', async (req, res) => {
   try {
     const userId = req.params.id;
     
-    // Get user details
+    // Get user details with address from junction table
     const userQuery = `
-      SELECT u.id, u.username, u.imie, u.nazwisko, u.data_urodzenia, u.adres_id,
-             e.email, t.numer as telefon,
-             GROUP_CONCAT(DISTINCT r.nazwa) as roles
-      FROM user u
-      LEFT JOIN emaile e ON u.id = e.user_id AND e.glowny = 1
-      LEFT JOIN telefony t ON u.id = t.user_id AND t.glowny = 1
-      LEFT JOIN user_role ur ON u.id = ur.user_id
-      LEFT JOIN role r ON ur.role_id = r.id
-      WHERE u.id = ? AND u.deleted_at IS NULL
-      GROUP BY u.id
+      SELECT 
+        u.id, 
+        u.username, 
+        u.imie, 
+        u.nazwisko, 
+        u.data_urodzenia, 
+        au.adres_id,
+        a.nr_budynku,
+        a.nr_lokalu,
+        a.kod_pocztowy,
+        ul.id as ulica_id,
+        ul.nazwa as ulica_nazwa,
+        m.id as miejscowosc_id,
+        m.nazwa as miejscowosc_nazwa,
+        e.email, 
+        t.numer as telefon,
+        GROUP_CONCAT(DISTINCT r.nazwa) as roles
+      FROM 
+        user u
+      LEFT JOIN 
+        adresy_user au ON u.id = au.user_id
+      LEFT JOIN 
+        adresy a ON au.adres_id = a.id
+      LEFT JOIN 
+        ulice ul ON a.ulica_id = ul.id
+      LEFT JOIN 
+        miejscowosci m ON ul.miejscowosc_id = m.id
+      LEFT JOIN 
+        emaile e ON u.id = e.user_id AND e.glowny = 1
+      LEFT JOIN 
+        telefony t ON u.id = t.user_id AND t.glowny = 1
+      LEFT JOIN 
+        user_role ur ON u.id = ur.user_id
+      LEFT JOIN 
+        role r ON ur.role_id = r.id
+      WHERE 
+        u.id = ? AND u.deleted_at IS NULL
+      GROUP BY 
+        u.id
     `;
     
     const users = await db.query(userQuery, [userId]);
@@ -258,11 +313,28 @@ router.get('/:id', async (req, res) => {
       imie: user.imie,
       nazwisko: user.nazwisko,
       data_urodzenia: user.data_urodzenia,
-      adres_id: user.adres_id,
       email: user.email,
       telefon: user.telefon,
       roles: user.roles ? user.roles.split(',') : []
     };
+
+    // Add address information if available
+    if (user.adres_id) {
+      userData.adres = {
+        id: user.adres_id,
+        ulica_id: user.ulica_id,
+        ulica_nazwa: user.ulica_nazwa,
+        miejscowosc_id: user.miejscowosc_id,
+        miejscowosc_nazwa: user.miejscowosc_nazwa,
+        nr_budynku: user.nr_budynku || '',
+        nr_lokalu: user.nr_lokalu || '',
+        kod_pocztowy: user.kod_pocztowy || ''
+      };
+      
+      console.log('Pobrano dane adresowe dla użytkownika:', userData.adres);
+    } else {
+      console.log('Użytkownik nie ma przypisanego adresu');
+    }
 
     // Get parish information for the user
     const parafiaQuery = `
@@ -418,10 +490,10 @@ router.put('/:id', async (req, res) => {
       roles,
       email,
       telefon,
-      parafiaId, // New field to handle parish assignment
-      rodzic,     // Optional parent data
-      swiadek,     // Optional witness data
-      adres       // Optional address data
+      parafiaId,
+      rodzic,
+      swiadek,
+      adres
     } = req.body;
     
     // Extract data_urodzenia separately with 'let' since we'll modify it
@@ -550,12 +622,15 @@ router.put('/:id', async (req, res) => {
         
         // Check if needed fields are provided
         if (adres.ulica_id && adres.nr_budynku && adres.kod_pocztowy) {
-          // First check if user already has an address
-          const userQuery = await db.query('SELECT adres_id FROM user WHERE id = ?', [id]);
+          // First check if user already has an address in the junction table
+          const userAdresQuery = await db.query(
+            'SELECT adres_id FROM adresy_user WHERE user_id = ? LIMIT 1', 
+            [id]
+          );
           
-          if (userQuery[0].adres_id) {
+          if (userAdresQuery.length > 0) {
             // Update existing address
-            adresId = userQuery[0].adres_id;
+            adresId = userAdresQuery[0].adres_id;
             
             const updateAdresQuery = `
               UPDATE adresy 
@@ -587,14 +662,21 @@ router.put('/:id', async (req, res) => {
             ]);
             
             adresId = adresResult.insertId;
-            console.log('Utworzono nowy adres:', adresId);
+            
+            // Add entry to junction table
+            await db.query(
+              'INSERT INTO adresy_user (user_id, adres_id) VALUES (?, ?)',
+              [id, adresId]
+            );
+            
+            console.log('Utworzono nowy adres:', adresId, 'i powiązano z użytkownikiem:', id);
           }
         } else {
           console.warn('Niepełne dane adresu, pomijam aktualizację adresu');
         }
       }
 
-      // Update user basic info - use let for variables that might change
+      // Update user basic info
       let updateUserQuery = 'UPDATE user SET ';
       let updateParams = [];
       let updateFields = [];
@@ -631,12 +713,8 @@ router.put('/:id', async (req, res) => {
         updateFields.push('data_urodzenia = NULL');
       }
       
-      // Add address_id to update if it was processed
-      if (adresId) {
-        updateFields.push('adres_id = ?');
-        updateParams.push(adresId);
-        console.log('Przypisanie adresu do użytkownika:', adresId);
-      }
+      // Note: we don't update adres_id directly in user table anymore
+      // instead we use the junction table
       
       if (updateFields.length > 0) {
         updateUserQuery += updateFields.join(', ') + ' WHERE id = ?';
@@ -775,16 +853,15 @@ router.put('/:id', async (req, res) => {
           
           // Insert parent user
           const insertUserQuery = `
-            INSERT INTO user (username, password_hash, imie, nazwisko, adres_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO user (username, password_hash, imie, nazwisko)
+            VALUES (?, ?, ?, ?)
           `;
           
           const userResult = await db.query(insertUserQuery, [
             username,
             passwordHash,
             rodzic.imie,
-            rodzic.nazwisko,
-            rodzic.adres_id || null
+            rodzic.nazwisko
           ]);
           
           rodzicUserId = userResult.insertId;
@@ -1232,7 +1309,7 @@ router.post('/:id/candidates', async (req, res) => {
     if (checkParentQuery.length === 0) {
       // Pobierz dane użytkownika
       const userData = await connection.query(
-        `SELECT imie, nazwisko, adres_id FROM user WHERE id = ? LIMIT 1`,
+        `SELECT imie, nazwisko FROM user WHERE id = ? LIMIT 1`,
         [parentId]
       );
       
@@ -1240,10 +1317,18 @@ router.post('/:id/candidates', async (req, res) => {
         throw new Error('Użytkownik nie istnieje');
       }
       
+      // Pobierz adres użytkownika z tabeli adresy_user
+      const userAddressQuery = await connection.query(
+        `SELECT adres_id FROM adresy_user WHERE user_id = ? LIMIT 1`, 
+        [parentId]
+      );
+
+      const adresId = userAddressQuery.length > 0 ? userAddressQuery[0].adres_id : null;
+      
       // Dodaj wpis do tabeli 'rodzic'
       const insertResult = await connection.query(
         `INSERT INTO rodzic (user_id, imie, nazwisko, adres_id) VALUES (?, ?, ?, ?)`,
-        [parentId, userData[0].imie, userData[0].nazwisko, userData[0].adres_id]
+        [parentId, userData[0].imie, userData[0].nazwisko, adresId]
       );
       
       rodzicId = insertResult.insertId;

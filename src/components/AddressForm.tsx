@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { locationsApi } from '../services/api';
 import { toast } from 'react-hot-toast';
-import { FaRoad, FaHome, FaMailBulk, FaPlus } from 'react-icons/fa';
+import { FaRoad, FaPlus } from 'react-icons/fa';
 
 export interface AdresFormData {
   miejscowosc_id: number | null;
@@ -44,6 +44,18 @@ const AddressForm: React.FC<AddressFormProps> = ({
     kod_pocztowy: initialData?.kod_pocztowy || ''
   });
 
+  // Track original data to detect changes
+  const [originalData, setOriginalData] = useState<AdresFormData>({
+    miejscowosc_id: initialData?.miejscowosc_id || null,
+    ulica_id: initialData?.ulica_id || null,
+    nr_budynku: initialData?.nr_budynku || '',
+    nr_lokalu: initialData?.nr_lokalu || '',
+    kod_pocztowy: initialData?.kod_pocztowy || ''
+  });
+
+  // Track if form has been modified
+  const [isModified, setIsModified] = useState(false);
+
   // UI state
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -65,6 +77,41 @@ const AddressForm: React.FC<AddressFormProps> = ({
   useEffect(() => {
     fetchCities();
   }, []);
+  
+  // Update original data when initialData changes
+  useEffect(() => {
+    if (initialData) {
+      setOriginalData({
+        miejscowosc_id: initialData.miejscowosc_id || null,
+        ulica_id: initialData.ulica_id || null,
+        nr_budynku: initialData.nr_budynku || '',
+        nr_lokalu: initialData.nr_lokalu || '',
+        kod_pocztowy: initialData.kod_pocztowy || ''
+      });
+      
+      setFormData({
+        miejscowosc_id: initialData.miejscowosc_id || null,
+        ulica_id: initialData.ulica_id || null,
+        nr_budynku: initialData.nr_budynku || '',
+        nr_lokalu: initialData.nr_lokalu || '',
+        kod_pocztowy: initialData.kod_pocztowy || ''
+      });
+      
+      setIsModified(false);
+    }
+  }, [initialData]);
+  
+  // Check if form data is different from original data
+  useEffect(() => {
+    const hasChanges = 
+      formData.miejscowosc_id !== originalData.miejscowosc_id ||
+      formData.ulica_id !== originalData.ulica_id ||
+      formData.nr_budynku !== originalData.nr_budynku ||
+      formData.nr_lokalu !== originalData.nr_lokalu ||
+      formData.kod_pocztowy !== originalData.kod_pocztowy;
+    
+    setIsModified(hasChanges);
+  }, [formData, originalData]);
   
   // Load streets when city is selected
   useEffect(() => {
@@ -418,9 +465,6 @@ const AddressForm: React.FC<AddressFormProps> = ({
                     </option>
                   ))}
                 </select>
-                <div className="ml-2 text-amber-500">
-                  <FaRoad />
-                </div>
               </div>
               <button
                 type="button"
@@ -494,9 +538,6 @@ const AddressForm: React.FC<AddressFormProps> = ({
                 errors.nr_budynku ? 'border-red-500' : 'border-gray-600'
               }`}
             />
-            <div className="absolute right-3 text-amber-500">
-              <FaHome />
-            </div>
           </div>
           {errors.nr_budynku && (
             <p className="mt-1 text-sm text-red-500">{errors.nr_budynku}</p>
@@ -537,9 +578,6 @@ const AddressForm: React.FC<AddressFormProps> = ({
               errors.kod_pocztowy ? 'border-red-500' : 'border-gray-600'
             }`}
           />
-          <div className="absolute right-3 text-amber-500">
-            <FaMailBulk />
-          </div>
         </div>
         {errors.kod_pocztowy && (
           <p className="mt-1 text-sm text-red-500">{errors.kod_pocztowy}</p>
@@ -552,13 +590,34 @@ const AddressForm: React.FC<AddressFormProps> = ({
           <h4 className="text-sm font-medium text-amber-400 mb-1">Podgląd adresu:</h4>
           <p className="text-white">
             ul. {getStreetName(formData.ulica_id)} {formData.nr_budynku}
-            {formData.nr_lokalu && `/${formData.nr_lokalu}`}, {getCityName(formData.miejscowosc_id)}
-            {formData.kod_pocztowy && `, ${formData.kod_pocztowy}`}
+            {formData.nr_lokalu && `/${formData.nr_lokalu}`}, 
+            {formData.kod_pocztowy && `${formData.kod_pocztowy} `}{getCityName(formData.miejscowosc_id)}
           </p>
         </div>
       )}
     </>
   );
+
+  // Render the button in a separate function
+  const renderSubmitButton = () => {
+    return (
+      <button
+        type="button"
+        onClick={validateAndSubmit}
+        className={`px-4 py-2 ${isModified ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'} text-white rounded-md transition-colors flex items-center`}
+        disabled={loading}
+      >
+        {loading ? (
+          <>
+            <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+            Zapisywanie...
+          </>
+        ) : (
+          isModified ? 'Zapisz zmiany w adresie' : 'Zapisz zmiany'
+        )}
+      </button>
+    );
+  };
 
   // Return either a form with the content or just the content
   return (
@@ -576,21 +635,7 @@ const AddressForm: React.FC<AddressFormProps> = ({
                 Anuluj
               </button>
             )}
-            <button
-              type="button"
-              onClick={validateAndSubmit}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors flex items-center"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                  Zapisywanie...
-                </>
-              ) : (
-                'Zapisz adres'
-              )}
-            </button>
+            {renderSubmitButton()}
           </div>
         </div>
       ) : (
@@ -610,7 +655,7 @@ const AddressForm: React.FC<AddressFormProps> = ({
             )}
             <button
               type="submit"
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors flex items-center"
+              className={`px-4 py-2 ${isModified ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'} text-white rounded-md transition-colors flex items-center`}
               disabled={loading}
             >
               {loading ? (
@@ -619,7 +664,7 @@ const AddressForm: React.FC<AddressFormProps> = ({
                   Zapisywanie...
                 </>
               ) : (
-                'Zapisz adres'
+                isModified ? 'Zapisz zmiany w adresie' : 'Zapisz zmiany'
               )}
             </button>
           </div>

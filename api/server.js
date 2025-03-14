@@ -51,6 +51,7 @@ const eventsRoutes = require('./routes/events');
 const locationsRoutes = require('./routes/locations');
 const kandydatRoutes = require('./routes/kandydat');
 const grupyRoutes = require('./routes/grupy');
+const szkolyRoutes = require('./routes/szkoly');
 
 // Configure middleware
 app.use(cors({
@@ -75,6 +76,7 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/locations', locationsRoutes);
 app.use('/api/kandydat', kandydatRoutes);
 app.use('/api/grupy', grupyRoutes);
+app.use('/api/szkoly', szkolyRoutes);
 
 // Global error handling middleware
 app.use((err, req, res, next) => {

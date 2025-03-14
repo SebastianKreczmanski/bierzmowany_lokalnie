@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { usersApi } from '../services/api';
+import { usersApi, locationsApi } from '../services/api';
 import { User } from '../types/user';
 import { FaUserEdit, FaTrash, FaEye, FaUserPlus } from 'react-icons/fa';
 import { toast } from 'react-hot-toast';
@@ -19,6 +19,8 @@ const UserList: React.FC = () => {
   const [showEditUserModal, setShowEditUserModal] = useState<boolean>(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState<boolean>(false);
   const [selectedUser, setSelectedUser] = useState<number | null>(null);
+  const [userDetailsForEdit, setUserDetailsForEdit] = useState<User | null>(null);
+  const [loadingUserDetails, setLoadingUserDetails] = useState<boolean>(false);
 
   // Pobieranie użytkowników
   const fetchUsers = async () => {
@@ -76,10 +78,89 @@ const UserList: React.FC = () => {
     setShowUserDetailsModal(true);
   };
 
-  // Obsługa edycji użytkownika
-  const handleEditUser = (userId: number) => {
+  /**
+   * Obsługa edycji użytkownika - pobiera pełne dane użytkownika i adresu
+   * @param userId ID użytkownika do edycji
+   */
+  const handleEditUser = async (userId: number) => {
     setSelectedUser(userId);
-    setShowEditUserModal(true);
+    setLoadingUserDetails(true);
+    
+    console.log('Edycja użytkownika - pobieranie danych dla userId:', userId);
+    
+    try {
+      // Pobierz dane użytkownika
+      const userData = await usersApi.getUserDetails(userId);
+      console.log('Pobrane dane użytkownika:', userData);
+      
+      if (!userData) {
+        toast.error('Nie udało się pobrać danych użytkownika');
+        setLoadingUserDetails(false);
+        return;
+      }
+      
+      // Jeśli użytkownik ma adres, pobierz szczegóły adresu
+      if (userData.adres_id) {
+        console.log('Użytkownik ma adres_id:', userData.adres_id, '- pobieranie szczegółów adresu');
+        
+        try {
+          const addressDetails = await locationsApi.getAddressDetails(userData.adres_id);
+          console.log('Pobrane szczegóły adresu:', addressDetails);
+          console.log('Pola w obiekcie addressDetails:', Object.keys(addressDetails || {}));
+          
+          if (addressDetails) {
+            // Sprawdź czy mamy wszystkie potrzebne dane
+            if (!addressDetails.ulica_id || !addressDetails.miejscowosc_id) {
+              console.warn('Brakujące dane adresu: ulica_id lub miejscowosc_id:', {
+                ulica_id: addressDetails.ulica_id,
+                miejscowosc_id: addressDetails.miejscowosc_id
+              });
+            }
+            
+            // Dodaj obiekt adresu do danych użytkownika
+            userData.adres = {
+              id: userData.adres_id,
+              ulica_id: addressDetails.ulica_id,
+              miejscowosc_id: addressDetails.miejscowosc_id,
+              nr_budynku: addressDetails.nr_budynku || '',
+              nr_lokalu: addressDetails.nr_lokalu || '',
+              kod_pocztowy: addressDetails.kod_pocztowy || '',
+              ulica_nazwa: addressDetails.ulica_nazwa,
+              miejscowosc_nazwa: addressDetails.miejscowosc_nazwa
+            };
+            
+            console.log('Utworzono obiekt adresu dla użytkownika:', userData.adres);
+            console.log('Kompletne pola adresu:', Object.keys(userData.adres));
+          } else {
+            console.warn(`Nie znaleziono adresu o ID ${userData.adres_id}`);
+            toast.error('Nie udało się pobrać szczegółów adresu użytkownika');
+          }
+        } catch (addressError) {
+          console.error('Błąd podczas pobierania szczegółów adresu:', addressError);
+          toast.error('Nie udało się pobrać szczegółów adresu użytkownika');
+        }
+      } else {
+        console.log('Użytkownik nie ma przypisanego adresu (brak adres_id)');
+      }
+      
+      // Zabezpieczenie, że zawsze mamy obiekt adresu nawet pusty
+      userData.adres = userData.adres || {
+        id: null,
+        ulica_id: null,
+        miejscowosc_id: null,
+        nr_budynku: '',
+        nr_lokalu: '',
+        kod_pocztowy: ''
+      };
+      
+      setUserDetailsForEdit(userData);
+      setShowEditUserModal(true);
+    } catch (error) {
+      console.error('Błąd podczas pobierania danych użytkownika:', error);
+      toast.error('Nie udało się pobrać danych użytkownika');
+    } finally {
+      setLoadingUserDetails(false);
+    }
   };
 
   // Obsługa dodawania nowego użytkownika
@@ -264,26 +345,26 @@ const UserList: React.FC = () => {
                             ))}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 text-right">
                           <div className="flex justify-end gap-2">
                             <button
                               onClick={() => handleViewUserDetails(user.id)}
-                              className="text-blue-400 hover:text-blue-300 transition-colors"
+                              className="text-blue-500 hover:text-blue-400"
                               title="Zobacz szczegóły"
                             >
                               <FaEye />
                             </button>
                             <button
                               onClick={() => handleEditUser(user.id)}
-                              className="text-amber-400 hover:text-amber-300 transition-colors"
-                              title="Edytuj"
+                              className="text-amber-500 hover:text-amber-400"
+                              title="Edytuj użytkownika"
                             >
                               <FaUserEdit />
                             </button>
                             <button
                               onClick={() => handleDeleteUser(user.id)}
-                              className="text-red-400 hover:text-red-300 transition-colors"
-                              title="Usuń"
+                              className="text-red-500 hover:text-red-400"
+                              title="Usuń użytkownika"
                             >
                               <FaTrash />
                             </button>
@@ -299,45 +380,108 @@ const UserList: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* Modalne okno dodawania użytkownika */}
-      {showAddUserModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl">
-            <h2 className="text-xl font-semibold text-amber-500 mb-4">Dodaj nowego użytkownika</h2>
-            <UserForm 
-              onSubmit={handleUserFormSuccess} 
-              onCancel={() => setShowAddUserModal(false)} 
-            />
-          </div>
-        </div>
-      )}
+      {/* Modal dodawania nowego użytkownika */}
+      <AnimatePresence>
+        {showAddUserModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-6">
+                <h2 className="text-xl font-semibold text-amber-500 mb-4">Dodaj nowego użytkownika</h2>
+                <UserForm 
+                  onSubmit={handleUserFormSuccess} 
+                  onCancel={() => setShowAddUserModal(false)} 
+                  isEditMode={false}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Modalne okno edycji użytkownika */}
-      {showEditUserModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl">
-            <h2 className="text-xl font-semibold text-amber-500 mb-4">Edytuj użytkownika</h2>
-            <UserForm 
-              onSubmit={handleUserFormSuccess} 
-              onCancel={() => setShowEditUserModal(false)} 
-              initialData={users.find(user => user.id === selectedUser)}
-              isEditMode={true}
-            />
-          </div>
-        </div>
-      )}
+      {/* Modal edycji użytkownika */}
+      <AnimatePresence>
+        {showEditUserModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-6">
+                <h2 className="text-xl font-semibold text-amber-500 mb-4">
+                  {loadingUserDetails ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin h-4 w-4 border-t-2 border-b-2 border-amber-500 rounded-full"></div>
+                      <span>Ładowanie danych użytkownika...</span>
+                    </div>
+                  ) : (
+                    `Edytuj użytkownika: ${userDetailsForEdit?.imie} ${userDetailsForEdit?.nazwisko}`
+                  )}
+                </h2>
+                {loadingUserDetails ? (
+                  <div className="flex justify-center items-center h-64">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500"></div>
+                  </div>
+                ) : (
+                  <UserForm 
+                    onSubmit={handleUserFormSuccess} 
+                    onCancel={() => setShowEditUserModal(false)} 
+                    initialData={userDetailsForEdit}
+                    isEditMode={true}
+                  />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Modalne okno szczegółów użytkownika */}
-      {showUserDetailsModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl">
-            <UserDetails 
-              userId={selectedUser} 
-              onClose={() => setShowUserDetailsModal(false)} 
-            />
-          </div>
-        </div>
-      )}
+      {/* Modal szczegółów użytkownika */}
+      <AnimatePresence>
+        {showUserDetailsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="p-6">
+                <h2 className="text-xl font-semibold text-amber-500 mb-4">
+                  Szczegóły użytkownika
+                </h2>
+                {selectedUser && (
+                  <UserDetails 
+                    userId={selectedUser} 
+                    onClose={() => setShowUserDetailsModal(false)}
+                  />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

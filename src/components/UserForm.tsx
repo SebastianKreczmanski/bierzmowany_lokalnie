@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import AddressForm from './AddressForm';
 import { validateAddress, createAddress } from '../utils/addressUtils';
-import { usersApi, grupyApi } from '../services/api';
+import { usersApi, grupyApi, locationsApi } from '../services/api';
 import KandydatRodzicForm from './KandydatRodzicForm';
 import KandydatGrupaForm from './KandydatGrupaForm';
 import KandydatParafiaForm from './KandydatParafiaForm';
 import KandydatSwiadekForm from './KandydatSwiadekForm';
 import KandydatImieBierzmowaniaForm from './KandydatImieBierzmowaniaForm';
 import KandydatSzkolaForm from './KandydatSzkolaForm';
+import dayjs from 'dayjs';
 
 // Helper function to check if a year is a leap year
 const isLeapYear = (year: number): boolean => {
@@ -185,6 +186,8 @@ const UserForm: React.FC<UserFormProps> = ({
   // Inicjalizacja wartości początkowych
   useEffect(() => {
     if (initialData && isEditMode) {
+      console.log('Inicjalizacja UserForm z danymi:', initialData);
+      
       // Ustaw początkowe wartości dla ról
       if (initialData.roles) {
         setSelectedRoles(Array.isArray(initialData.roles) 
@@ -192,10 +195,45 @@ const UserForm: React.FC<UserFormProps> = ({
           : initialData.roles.split(','));
       }
       
+      // Debugowanie adresu
+      console.log('Debug adresu w UserForm:');
+      console.log('- initialData.adres:', initialData.adres);
+      
       // Inicjalizacja adresu jeśli istnieje
-      if (initialData.adres_id) {
-        // Tu powinno być pobranie danych adresu z API i ustawienie ich w komponencie
-        // Dla uproszczenia zakładamy, że dane adresu są przekazane w initialData
+      try {
+        if (initialData.adres && typeof initialData.adres === 'object') {
+          console.log('Inicjalizacja adresu z pełnego obiektu adres:', initialData.adres);
+          console.log('Klucze obiektu adres:', Object.keys(initialData.adres));
+          
+          // Sprawdź czy obiekt adres zawiera podstawowe dane
+          if (initialData.adres.id || initialData.adres.ulica_id || initialData.adres.miejscowosc_id) {
+            console.log('Ustawianie danych adresowych z obiektu adres');
+            
+            // Zapisz adres do stanu komponentu
+            const newAddressData = {
+              miejscowosc_id: initialData.adres.miejscowosc_id || null,
+              ulica_id: initialData.adres.ulica_id || null,
+              nr_budynku: initialData.adres.nr_budynku || '',
+              nr_lokalu: initialData.adres.nr_lokalu || '',
+              kod_pocztowy: initialData.adres.kod_pocztowy || ''
+            };
+            
+            setAddressData(newAddressData);
+            
+            console.log('Zainicjalizowano dane adresowe z pełnego obiektu:', newAddressData);
+            
+            if (!initialData.adres.miejscowosc_id || !initialData.adres.ulica_id) {
+              console.warn('Uwaga: Obiekt adresu nie zawiera miejscowosc_id lub ulica_id', initialData.adres);
+            }
+          } else {
+            console.warn('Obiekt adres nie zawiera wymaganych pól:', initialData.adres);
+          }
+        } else {
+          console.log('Brak danych adresowych w initialData');
+        }
+      } catch (addressError) {
+        console.error('Błąd podczas inicjalizacji adresu:', addressError);
+        toast.error('Wystąpił błąd podczas inicjalizacji danych adresowych');
       }
 
       // Inicjalizacja powiązanych kandydatów, jeśli użytkownik jest rodzicem
@@ -438,6 +476,7 @@ const UserForm: React.FC<UserFormProps> = ({
           // Sprawdź zakres wartości
           if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
             // Prosta konwersja do formatu YYYY-MM-DD (format bazy danych MySQL)
+            // bez używania żadnych obiektów Date
             formattedBirthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             console.log('Skonwertowano datę z formatu YYYY.MM.DD na YYYY-MM-DD dla bazy danych:', formattedBirthDate);
             
@@ -688,10 +727,9 @@ const UserForm: React.FC<UserFormProps> = ({
     };
   };
   
-  // Funkcja obsługująca przesłanie formularza
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  // Obsługa przycisku Zapisz
+  const handleSubmit = () => {
+    // Podstawowa walidacja formularza
     const validation = validateForm();
     if (!validation.isValid) {
       setError(validation.errors.join(', '));
@@ -709,8 +747,11 @@ const UserForm: React.FC<UserFormProps> = ({
           ulica_id: addressData.ulica_id,
           nr_budynku: addressData.nr_budynku,
           nr_lokalu: addressData.nr_lokalu || null,
+          kod_pocztowy: addressData.kod_pocztowy || '',
           miejscowosc_id: addressData.miejscowosc_id
         };
+        
+        console.log('Przygotowane dane adresowe do wysłania:', adres);
       }
       
       // Formatowanie daty urodzenia, jeśli została wprowadzona
@@ -733,7 +774,7 @@ const UserForm: React.FC<UserFormProps> = ({
             // Sprawdź zakres wartości
             if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
               // Prosta konwersja do formatu YYYY-MM-DD (format bazy danych MySQL)
-              // bez używania żadnych obiektów Date
+    
               formattedBirthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               console.log('Skonwertowano datę z formatu YYYY.MM.DD na YYYY-MM-DD dla bazy danych:', formattedBirthDate);
               
@@ -796,7 +837,7 @@ const UserForm: React.FC<UserFormProps> = ({
         imie: firstName,
         nazwisko: lastName,
         data_urodzenia: formattedBirthDate,
-        adres: adres,
+        adres,
         email,
         telefon: phone,
         roles: selectedRoles,
@@ -807,7 +848,8 @@ const UserForm: React.FC<UserFormProps> = ({
       console.log('Dane użytkownika do wysłania:', { 
         ...userData, 
         password: userData.password ? '******' : undefined,
-        data_urodzenia: userData.data_urodzenia 
+        data_urodzenia: userData.data_urodzenia,
+        adres: userData.adres ? 'Obiekt adresu jest obecny' : 'Brak adresu'
       });
       
       // Wywołanie przekazanej funkcji onSubmit
@@ -1390,11 +1432,30 @@ const UserForm: React.FC<UserFormProps> = ({
 
   // Renderowanie zawartości zakładki z danymi adresowymi
   const renderAddressDataTab = () => {
+    console.log('Rendering address data tab with address data:', addressData);
+    console.log('Original address data from initialData:', initialData?.adres);
+    
     return (
       <div className="space-y-4">
+        <div className="bg-gray-800 p-4 mb-4 rounded border border-gray-700">
+          <h3 className="text-amber-500 font-medium mb-2">Dane adresowe</h3>
+          {addressData.miejscowosc_id ? (
+            <p className="text-sm text-gray-300">
+              Aktualne dane adresowe są załadowane i gotowe do edycji.
+            </p>
+          ) : (
+            <p className="text-sm text-yellow-400">
+              {initialData?.adres ? 
+                "Ładowanie danych adresowych..." : 
+                "Brak danych adresowych. Wypełnij formularz poniżej."}
+            </p>
+          )}
+        </div>
+        
         <AddressForm 
           onAddressSelected={(addressData) => {
             // Zapisujemy dane adresu do formularza
+            console.log('Address form returned data:', addressData);
             setAddressData(addressData);
             toast.success('Dane adresowe zapisane pomyślnie');
           }}

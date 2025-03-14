@@ -1217,6 +1217,58 @@ export const locationsApi = {
       throw error;
     }
   },
+
+  /**
+   * Pobieranie szczegółów adresu
+   * @param addressId ID adresu
+   * @returns Promise ze szczegółami adresu
+   */
+  async getAddressDetails(addressId: number): Promise<any> {
+    try {
+      console.log(`API: Pobieranie szczegółów adresu ID: ${addressId}`);
+      const response = await api.get<ApiResponse<any>>(`/locations/address/${addressId}`);
+      
+      if (!response.data.success) {
+        console.warn(`API: Błąd w odpowiedzi dla adresu ${addressId}:`, response.data);
+        throw new Error(response.data.message || 'Błąd pobierania adresu');
+      }
+      
+      const addressData = response.data.data;
+      
+      if (!addressData) {
+        console.warn(`API: Brak danych dla adresu ${addressId}`);
+        return null;
+      }
+      
+      // Logowanie kluczowych pól adresu dla debugowania
+      console.log(`API: Otrzymano dane adresu ID: ${addressId}`, {
+        id: addressData.id,
+        ulica_id: addressData.ulica_id,
+        ulica_nazwa: addressData.ulica_nazwa,
+        miejscowosc_id: addressData.miejscowosc_id,
+        miejscowosc_nazwa: addressData.miejscowosc_nazwa,
+        nr_budynku: addressData.nr_budynku,
+        nr_lokalu: addressData.nr_lokalu,
+        kod_pocztowy: addressData.kod_pocztowy
+      });
+      
+      // Sprawdź, czy mamy wszystkie wymagane pola
+      if (!addressData.ulica_id || !addressData.miejscowosc_id) {
+        console.warn(`API: Brakujące wymagane pola dla adresu ${addressId}:`, {
+          ulica_id: addressData.ulica_id,
+          miejscowosc_id: addressData.miejscowosc_id
+        });
+      }
+      
+      return addressData;
+    } catch (error: any) {
+      console.error(`API: Błąd pobierania szczegółów adresu ${addressId}:`, error.message);
+      if (error.response) {
+        console.error('API: Szczegóły odpowiedzi:', error.response.data);
+      }
+      return null;
+    }
+  },
 }; 
 
 /**
@@ -1554,6 +1606,27 @@ export const kandydatApi = {
       return response.data;
     } catch (error: any) {
       console.error('API: Błąd podczas zapisywania informacji o szkole:', error.message);
+      return { success: false, message: error.message };
+    }
+  },
+
+  /**
+   * Utworzenie nowej szkoły
+   * @param nazwa Nazwa szkoły
+   * @returns Promise z informacją o powodzeniu operacji i danymi utworzonej szkoły
+   */
+  async createSzkola(nazwa: string): Promise<any> {
+    try {
+      console.log(`API: Tworzenie nowej szkoły: ${nazwa}`);
+      const response = await api.post<ApiResponse<any>>('/szkoly', { nazwa });
+      
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Nie udało się utworzyć nowej szkoły');
+      }
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('API: Błąd podczas tworzenia nowej szkoły:', error.message);
       return { success: false, message: error.message };
     }
   },
