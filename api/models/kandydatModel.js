@@ -39,7 +39,7 @@ class KandydatModel {
           u.id = ?
       `;
       
-      const [kandydatRows] = await db.query(kandydatQuery, [userId]);
+      const kandydatRows = await db.query(kandydatQuery, [userId]);
       
       if (kandydatRows.length === 0) {
         return null;
@@ -166,6 +166,7 @@ class KandydatModel {
       `;
       
       const uczenRows = await db.query(uczenQuery, [userId]);
+      console.log(`Znalezione dane szkolne dla kandydata (ID=${userId}):`, uczenRows);
       
       // 7. Pobierz dane o parafii
       const parafiaQuery = `
@@ -610,50 +611,98 @@ class KandydatModel {
    */
   async saveSzkola(kandydatId, szkolaData) {
     try {
-      // Sprawdź, czy dane szkolne już istnieją
+      console.log('KandydatModel.saveSzkola - Starting with data:', { kandydatId, szkolaData });
+      
+      // Validate the input data
+      if (!kandydatId || isNaN(kandydatId)) {
+        console.error('KandydatModel.saveSzkola - Invalid kandydatId:', kandydatId);
+        throw new Error('Invalid user ID');
+      }
+      
+      if (!szkolaData || !szkolaData.szkola_id || !szkolaData.klasa || !szkolaData.rok_szkolny) {
+        console.error('KandydatModel.saveSzkola - Missing required data:', szkolaData);
+        throw new Error('Missing required school data');
+      }
+      
+      // Check if student data already exists
       const checkQuery = `
-        SELECT id
-        FROM uczen
-        WHERE user_id = ?
+        SELECT id FROM uczen WHERE user_id = ?
       `;
-      const existingUczniowie = await db.query(checkQuery, [kandydatId]);
+      console.log('KandydatModel.saveSzkola - Executing check query:', checkQuery);
+      console.log('KandydatModel.saveSzkola - With params:', [kandydatId]);
+      
+      const existingRows = await db.query(checkQuery, [kandydatId]);
+      console.log('KandydatModel.saveSzkola - Existing rows:', existingRows);
       
       let uczenId;
+      let result;
       
-      if (existingUczniowie.length > 0) {
-        // Aktualizuj istniejące dane
-        uczenId = existingUczniowie[0].id;
+      if (existingRows && existingRows.length > 0) {
+        // Update existing student data
+        uczenId = existingRows[0].id;
+        console.log(`KandydatModel.saveSzkola - Updating existing student record with ID ${uczenId}`);
         
-        const updateUczenQuery = `
-          UPDATE uczen
-          SET szkola_id = ?, klasa = ?, rok_szkolny = ?
+        const updateQuery = `
+          UPDATE uczen 
+          SET szkola_id = ?, klasa = ?, rok_szkolny = ? 
           WHERE id = ?
         `;
-        await db.query(updateUczenQuery, [
+        console.log('KandydatModel.saveSzkola - Executing update query:', updateQuery);
+        console.log('KandydatModel.saveSzkola - With params:', [
+          szkolaData.szkola_id, szkolaData.klasa, szkolaData.rok_szkolny, uczenId
+        ]);
+        
+        result = await db.query(updateQuery, [
           szkolaData.szkola_id,
           szkolaData.klasa,
           szkolaData.rok_szkolny,
           uczenId
         ]);
+        
+        console.log('KandydatModel.saveSzkola - Update result:', result);
       } else {
-        // Utwórz nowe dane
-        const createUczenQuery = `
-          INSERT INTO uczen (user_id, szkola_id, klasa, rok_szkolny)
+        // Insert new student data
+        console.log('KandydatModel.saveSzkola - Creating new student record');
+        
+        const insertQuery = `
+          INSERT INTO uczen (user_id, szkola_id, klasa, rok_szkolny) 
           VALUES (?, ?, ?, ?)
         `;
-        const result = await db.query(createUczenQuery, [
+        console.log('KandydatModel.saveSzkola - Executing insert query:', insertQuery);
+        console.log('KandydatModel.saveSzkola - With params:', [
+          kandydatId, szkolaData.szkola_id, szkolaData.klasa, szkolaData.rok_szkolny
+        ]);
+        
+        result = await db.query(insertQuery, [
           kandydatId,
           szkolaData.szkola_id,
           szkolaData.klasa,
           szkolaData.rok_szkolny
         ]);
         
+        console.log('KandydatModel.saveSzkola - Insert result:', result);
         uczenId = result.insertId;
+        console.log('KandydatModel.saveSzkola - New student ID:', uczenId);
       }
       
-      return { id: uczenId };
+      // Verify the data was saved correctly
+      const verifyQuery = `
+        SELECT u.*, s.nazwa as szkola_nazwa 
+        FROM uczen u
+        JOIN szkola s ON u.szkola_id = s.id
+        WHERE u.id = ?
+      `;
+      
+      console.log('KandydatModel.saveSzkola - Verifying saved data with query:', verifyQuery);
+      const verifiedData = await db.query(verifyQuery, [uczenId]);
+      console.log('KandydatModel.saveSzkola - Verified data:', verifiedData);
+      
+      return { 
+        id: uczenId,
+        data: verifiedData && verifiedData.length > 0 ? verifiedData[0] : null 
+      };
     } catch (error) {
-      console.error('Błąd podczas zapisywania danych szkolnych:', error);
+      console.error('KandydatModel.saveSzkola - Error:', error);
       throw error;
     }
   }

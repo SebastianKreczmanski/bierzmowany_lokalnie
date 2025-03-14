@@ -79,20 +79,26 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
   
   // Inicjalizacja formularza danymi z props
   useEffect(() => {
-    if (initialData && initialData.uczen) {
+    console.log('Initializing school form with data:', initialData);
+    console.log('Full initialData structure:', JSON.stringify(initialData, null, 2));
+    
+    const kandydatData = initialData?.data || initialData;
+    
+    if (kandydatData && kandydatData.szkola) {
+      console.log('Found school data in kandydatData.szkola:', kandydatData.szkola);
       const initialFormData = {
-        szkola_id: initialData.uczen.szkola_id.toString(),
-        klasa: initialData.uczen.klasa || '',
-        rok_szkolny: initialData.uczen.rok_szkolny || getCurrentSchoolYear()
+        szkola_id: kandydatData.szkola.szkola_id.toString(),
+        klasa: kandydatData.szkola.klasa || '',
+        rok_szkolny: kandydatData.szkola.rok_szkolny || getCurrentSchoolYear()
       };
       
       setFormData(initialFormData);
       setOriginalData(initialFormData);
       setIsModified(false);
       
-      console.log('Loaded initial school data:', initialFormData);
+      console.log('Initialized form with school data:', initialFormData);
     } else {
-      // Domyślne wartości
+      console.log('No school data found in kandydatData, using defaults');
       const defaultData = {
         szkola_id: '',
         klasa: '',
@@ -171,9 +177,20 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    // Since we're using a button with type="button" now, we don't need e.preventDefault()
+    // but we'll keep it for safety in case this gets changed again
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    
+    console.log('Submit button clicked, validating form data...');
     
     if (!formData.szkola_id || !formData.klasa || !formData.rok_szkolny) {
+      console.log('Validation failed:', {
+        szkola_id: !!formData.szkola_id, 
+        klasa: !!formData.klasa, 
+        rok_szkolny: !!formData.rok_szkolny
+      });
       setError('Wszystkie pola są wymagane');
       return;
     }
@@ -182,17 +199,27 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
     setError(null);
     
     try {
-      console.log('Saving school data:', {
-        szkola_id: parseInt(formData.szkola_id),
-        klasa: formData.klasa,
-        rok_szkolny: formData.rok_szkolny
+      console.log('Submitting school data:', {
+        kandydatId,
+        formData,
+        szkolaData: {
+          szkola_id: parseInt(formData.szkola_id),
+          klasa: formData.klasa,
+          rok_szkolny: formData.rok_szkolny
+        }
       });
       
-      const response = await kandydatApi.saveSzkola(kandydatId, {
+      const szkolaData = {
         szkola_id: parseInt(formData.szkola_id),
         klasa: formData.klasa,
         rok_szkolny: formData.rok_szkolny
-      } as SzkolaData);
+      };
+      
+      console.log('Calling API with data:', szkolaData);
+      
+      const response = await kandydatApi.saveSzkola(kandydatId, szkolaData);
+      
+      console.log('API response:', response);
       
       if (response.success) {
         toast.success('Informacje o szkole zostały zapisane');
@@ -201,12 +228,19 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
         setOriginalData({...formData});
         setIsModified(false);
         
-        onSuccess();
+        // Delay calling onSuccess to ensure UI updates are complete
+        setTimeout(() => {
+          if (typeof onSuccess === 'function') {
+            console.log('Calling onSuccess callback');
+            onSuccess();
+          }
+        }, 300);
       } else {
+        console.error('Error response from API:', response.message);
         setError(response.message || 'Nie udało się zapisać informacji o szkole');
       }
     } catch (error) {
-      console.error('Błąd podczas zapisywania informacji o szkole:', error);
+      console.error('Exception during form submission:', error);
       setError('Wystąpił błąd podczas zapisywania informacji o szkole');
     } finally {
       setLoading(false);
@@ -228,25 +262,32 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
         </div>
       )}
       
-      {!initialData?.szkola && !readOnly && (
-        <div className="mb-4 p-4 text-blue-200 bg-blue-900/30 rounded-md border border-blue-800">
-          Kandydat nie ma jeszcze przypisanej szkoły. Wypełnij formularz, aby dodać informacje o szkole.
-        </div>
-      )}
-      
-      {initialData?.szkola && (
-        <div className="mb-4 p-4 bg-gray-750 rounded-md border border-gray-600">
-          <h5 className="text-lg font-medium mb-2 text-amber-400">Aktualna szkoła</h5>
-          <div className="space-y-1 text-gray-200">
-            <div><strong className="text-amber-300">Nazwa:</strong> {initialData.szkola.nazwa}</div>
-            <div><strong className="text-amber-300">Klasa:</strong> {initialData.szkola.klasa}</div>
-            <div><strong className="text-amber-300">Rok szkolny:</strong> {initialData.szkola.rok_szkolny}</div>
-          </div>
-        </div>
-      )}
+      {(() => {
+        const kandydatData = initialData?.data || initialData;
+        return (
+          <>
+            {!kandydatData?.szkola && !readOnly && (
+              <div className="mb-4 p-4 text-blue-200 bg-blue-900/30 rounded-md border border-blue-800">
+                Kandydat nie ma jeszcze przypisanej szkoły. Wypełnij formularz, aby dodać informacje o szkole.
+              </div>
+            )}
+            
+            {kandydatData?.szkola && (
+              <div className="mb-4 p-4 bg-gray-750 rounded-md border border-gray-600">
+                <h5 className="text-lg font-medium mb-2 text-amber-400">Aktualna szkoła</h5>
+                <div className="space-y-1 text-gray-200">
+                  <div><strong className="text-amber-300">Nazwa:</strong> {kandydatData.szkola.nazwa || kandydatData.szkola.szkola_nazwa}</div>
+                  <div><strong className="text-amber-300">Klasa:</strong> {kandydatData.szkola.klasa}</div>
+                  <div><strong className="text-amber-300">Rok szkolny:</strong> {kandydatData.szkola.rok_szkolny}</div>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       
       {!readOnly && (
-        <form onSubmit={handleSubmit}>
+        <div className="space-y-4">
           <div className="mb-4">
             <label htmlFor="szkola_id" className="block text-sm font-medium text-amber-300 mb-1">Szkoła*</label>
             <div className="space-y-2">
@@ -373,7 +414,8 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
           
           <div className="flex justify-end mt-6">
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={loading || loadingSzkoly}
               className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm 
                       text-sm font-medium text-white 
@@ -394,7 +436,7 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
                 'Zapisz informacje o szkole'}
             </button>
           </div>
-        </form>
+        </div>
       )}
     </div>
   );

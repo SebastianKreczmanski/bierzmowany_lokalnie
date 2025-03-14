@@ -67,7 +67,24 @@ router.post('/:userId/imie-bierzmowania', authorize(['kandydat', 'administrator'
  * @desc    Dodaje lub aktualizuje dane szkolne kandydata
  * @access  Private (kandydat - tylko swoje dane, admin/duszpasterz/kancelaria - wszystkie dane)
  */
-router.post('/:userId/szkola', authorize(['kandydat', 'administrator', 'duszpasterz', 'kancelaria']), kandydatController.saveSzkola);
+router.post('/:userId/szkola', authorize(['kandydat', 'administrator', 'duszpasterz', 'kancelaria']), async (req, res) => {
+  console.log('=== SZKOLA ROUTE RECEIVED REQUEST ===');
+  console.log('Request params:', req.params);
+  console.log('Request body:', req.body);
+  console.log('Authenticated user:', req.user ? req.user.id : 'No user');
+  
+  try {
+    // Pass the request to the controller
+    await kandydatController.saveSzkola(req, res);
+  } catch (error) {
+    console.error('ROUTE ERROR:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Błąd podczas przetwarzania żądania',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
 
 /**
  * @route   POST /api/kandydat/:userId/parafia

@@ -409,8 +409,38 @@ router.get('/:id', async (req, res) => {
       userData.przypisane_grupy = grupy;
     }
     
-    // If user has 'kandydat' role, get parents information
+    // If user has 'kandydat' role, get candidate-specific data
     if (userData.roles.includes('kandydat')) {
+      // Get school information
+      const uczenQuery = `
+        SELECT 
+          u.id, 
+          u.szkola_id, 
+          u.klasa, 
+          u.rok_szkolny,
+          s.nazwa as szkola_nazwa
+        FROM 
+          uczen u
+        JOIN 
+          szkola s ON u.szkola_id = s.id
+        WHERE 
+          u.user_id = ?
+      `;
+      
+      const uczenData = await db.query(uczenQuery, [userId]);
+      console.log('Dane ucznia dla kandydata ID:', userId, uczenData);
+      
+      if (uczenData && uczenData.length > 0) {
+        userData.szkola = {
+          id: uczenData[0].id,
+          szkola_id: uczenData[0].szkola_id,
+          nazwa: uczenData[0].szkola_nazwa,
+          klasa: uczenData[0].klasa,
+          rok_szkolny: uczenData[0].rok_szkolny
+        };
+      }
+      
+      // Get parents information
       const rodziceQuery = `
         SELECT 
           r.id, 

@@ -362,12 +362,17 @@ class KandydatController {
    * @param {Object} res - Obiekt odpowiedzi Express
    */
   async saveSzkola(req, res) {
+    console.log('=== CONTROLLER saveSzkola CALLED ===');
     try {
       const { userId } = req.params;
       const szkolaData = req.body;
       
+      console.log('Controller received userId:', userId);
+      console.log('Controller received szkolaData:', JSON.stringify(szkolaData));
+      
       // Sprawdź, czy ID jest prawidłowe
       if (!userId || isNaN(userId)) {
+        console.log('Invalid userId:', userId);
         return res.status(400).json({
           success: false,
           message: 'Nieprawidłowe ID użytkownika'
@@ -379,7 +384,17 @@ class KandydatController {
       const isDuszpasterz = req.user.roles.includes('duszpasterz');
       const isKancelaria = req.user.roles.includes('kancelaria');
       
+      console.log('User roles:', req.user.roles);
+      console.log('Authorization check:', {
+        requestUserId: parseInt(userId),
+        loggedInUserId: req.user.id,
+        isAdmin,
+        isDuszpasterz,
+        isKancelaria
+      });
+      
       if (parseInt(userId) !== req.user.id && !isAdmin && !isDuszpasterz && !isKancelaria) {
+        console.log('Authorization failed');
         return res.status(403).json({
           success: false,
           message: 'Brak uprawnień do edycji danych szkolnych tego kandydata'
@@ -388,22 +403,35 @@ class KandydatController {
       
       // Walidacja danych szkolnych
       if (!szkolaData.szkola_id || !szkolaData.klasa || !szkolaData.rok_szkolny) {
+        console.log('Validation failed:', {
+          szkola_id: szkolaData.szkola_id,
+          klasa: szkolaData.klasa,
+          rok_szkolny: szkolaData.rok_szkolny
+        });
         return res.status(400).json({
           success: false,
           message: 'Szkoła, klasa i rok szkolny są wymagane'
         });
       }
       
-      // Dodaj lub zaktualizuj dane szkolne
-      const result = await kandydatModel.saveSzkola(userId, szkolaData);
+      console.log('Data validation passed, calling model saveSzkola method');
       
-      return res.status(200).json({
-        success: true,
-        message: 'Dane szkolne zostały zapisane',
-        data: result
-      });
+      // Dodaj lub zaktualizuj dane szkolne
+      try {
+        const result = await kandydatModel.saveSzkola(userId, szkolaData);
+        console.log('Model returned result:', result);
+        
+        return res.status(200).json({
+          success: true,
+          message: 'Dane szkolne zostały zapisane',
+          data: result
+        });
+      } catch (modelError) {
+        console.error('Model error:', modelError);
+        throw modelError;
+      }
     } catch (error) {
-      console.error('Błąd podczas zapisywania danych szkolnych:', error);
+      console.error('Controller error in saveSzkola:', error);
       return res.status(500).json({
         success: false,
         message: 'Wystąpił błąd podczas zapisywania danych szkolnych',

@@ -131,13 +131,16 @@ const kandydatApi = {
   },
 
   // Dodawanie/edycja informacji o szkole
-  saveSzkola: async (userId: string, data: { szkola_id: number, klasa: string }): Promise<ApiResponse> => {
+  saveSzkola: async (userId: string, data: { szkola_id: number, klasa: string, rok_szkolny: string }): Promise<ApiResponse> => {
     try {
+      console.log('Sending school data to API:', data);
       const response = await axios.post(`${API_URL}/api/kandydat/${userId}/szkola`, data, {
         withCredentials: true
       });
+      console.log('API response for school data:', response.data);
       return { success: true, data: response.data };
     } catch (error) {
+      console.error('Error saving school data:', error);
       return handleApiError(error, 'Nie udało się zapisać informacji o szkole');
     }
   },
