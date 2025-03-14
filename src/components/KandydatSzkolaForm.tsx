@@ -55,6 +55,9 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
   const [newSchoolName, setNewSchoolName] = useState('');
   const [addingSchool, setAddingSchool] = useState(false);
   
+  // Track if data was just saved to update display before parent refresh
+  const [localSavedData, setLocalSavedData] = useState<any>(null);
+  
   // Pobieranie listy szkół
   useEffect(() => {
     const fetchSzkoly = async () => {
@@ -81,6 +84,9 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
   useEffect(() => {
     console.log('Initializing school form with data:', initialData);
     console.log('Full initialData structure:', JSON.stringify(initialData, null, 2));
+    
+    // Clear local saved data when parent sends new data
+    setLocalSavedData(null);
     
     const kandydatData = initialData?.data || initialData;
     
@@ -228,13 +234,23 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
         setOriginalData({...formData});
         setIsModified(false);
         
-        // Delay calling onSuccess to ensure UI updates are complete
-        setTimeout(() => {
-          if (typeof onSuccess === 'function') {
-            console.log('Calling onSuccess callback');
-            onSuccess();
-          }
-        }, 300);
+        // Get the school name for the locally saved data
+        const schoolName = getSchoolName(formData.szkola_id);
+        
+        // Create a local copy of the saved data to update UI immediately
+        setLocalSavedData({
+          szkola_id: parseInt(formData.szkola_id),
+          szkola_nazwa: schoolName,
+          nazwa: schoolName,
+          klasa: formData.klasa,
+          rok_szkolny: formData.rok_szkolny
+        });
+        
+        // Call onSuccess immediately to trigger parent component refresh
+        if (typeof onSuccess === 'function') {
+          console.log('Calling onSuccess callback immediately');
+          onSuccess();
+        }
       } else {
         console.error('Error response from API:', response.message);
         setError(response.message || 'Nie udało się zapisać informacji o szkole');
@@ -263,22 +279,25 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
       )}
       
       {(() => {
+        // Use local saved data if available, otherwise use parent data
         const kandydatData = initialData?.data || initialData;
+        const displayData = localSavedData ? { szkola: localSavedData } : kandydatData;
+        
         return (
           <>
-            {!kandydatData?.szkola && !readOnly && (
+            {!displayData?.szkola && !readOnly && (
               <div className="mb-4 p-4 text-blue-200 bg-blue-900/30 rounded-md border border-blue-800">
                 Kandydat nie ma jeszcze przypisanej szkoły. Wypełnij formularz, aby dodać informacje o szkole.
               </div>
             )}
             
-            {kandydatData?.szkola && (
+            {displayData?.szkola && (
               <div className="mb-4 p-4 bg-gray-750 rounded-md border border-gray-600">
                 <h5 className="text-lg font-medium mb-2 text-amber-400">Aktualna szkoła</h5>
                 <div className="space-y-1 text-gray-200">
-                  <div><strong className="text-amber-300">Nazwa:</strong> {kandydatData.szkola.nazwa || kandydatData.szkola.szkola_nazwa}</div>
-                  <div><strong className="text-amber-300">Klasa:</strong> {kandydatData.szkola.klasa}</div>
-                  <div><strong className="text-amber-300">Rok szkolny:</strong> {kandydatData.szkola.rok_szkolny}</div>
+                  <div><strong className="text-amber-300">Nazwa:</strong> {displayData.szkola.nazwa || displayData.szkola.szkola_nazwa}</div>
+                  <div><strong className="text-amber-300">Klasa:</strong> {displayData.szkola.klasa}</div>
+                  <div><strong className="text-amber-300">Rok szkolny:</strong> {displayData.szkola.rok_szkolny}</div>
                 </div>
               </div>
             )}

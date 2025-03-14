@@ -49,16 +49,27 @@ const KandydatManagement: React.FC = () => {
     
     try {
       setLoading(true);
+      console.log('Refreshing candidate data for ID:', id);
+      
       const response = await kandydatApi.getKandydatData(id);
       
       if (response.success) {
-        setKandydat(response.data);
-        toast.success('Dane zostały odświeżone');
+        console.log('Data refresh successful, updating component state with new data');
+        
+        // Force a clean state update by first clearing and then setting the data
+        setKandydat(null);
+        
+        // Use setTimeout to ensure the state update has time to process
+        setTimeout(() => {
+          setKandydat(response.data);
+          toast.success('Dane zostały odświeżone');
+        }, 100);
       } else {
+        console.error('Failed to refresh data:', response.message);
         toast.error(response.message || 'Nie udało się odświeżyć danych');
       }
     } catch (error: any) {
-      console.error('Błąd odświeżania danych:', error);
+      console.error('Error refreshing data:', error);
       toast.error('Wystąpił błąd podczas odświeżania danych');
     } finally {
       setLoading(false);
