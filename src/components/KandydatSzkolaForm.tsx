@@ -215,7 +215,7 @@ const KandydatSzkolaForm: React.FC<KandydatSzkolaFormProps> = ({
         }
       });
       
-      const szkolaData = {
+      const szkolaData: SzkolaData = {
         szkola_id: parseInt(formData.szkola_id),
         klasa: formData.klasa,
         rok_szkolny: formData.rok_szkolny

@@ -26,10 +26,21 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
     parafia_id: ''
   });
   
+  // Track original data to detect changes
+  const [originalData, setOriginalData] = useState({
+    parafia_id: ''
+  });
+  
+  // Track if form has been modified
+  const [isModified, setIsModified] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [loadingParafie, setLoadingParafie] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parafie, setParafie] = useState<Parafia[]>([]);
+  
+  // Track local saved data for immediate display
+  const [localSavedData, setLocalSavedData] = useState<any>(null);
   
   // Pobieranie listy parafii
   useEffect(() => {
@@ -37,7 +48,7 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
       setLoadingParafie(true);
       
       try {
-        const response = await usersApi.getParafie();
+        const response = await kandydatApi.getParafie();
         if (response.success) {
           setParafie(response.data);
         } else {
@@ -55,20 +66,32 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
   
   // Inicjalizacja formularza danymi z props
   useEffect(() => {
+    // Clear local saved data when receiving new data from parent
+    setLocalSavedData(null);
+    
     if (initialData && initialData.parafia) {
-      setFormData({
+      const initialFormData = {
         parafia_id: initialData.parafia.id.toString()
-      });
+      };
+      setFormData(initialFormData);
+      setOriginalData(initialFormData);
+      setIsModified(false);
     }
   }, [initialData]);
+  
+  // Check if form data is different from original data
+  useEffect(() => {
+    const hasChanges = formData.parafia_id !== originalData.parafia_id;
+    setIsModified(hasChanges);
+  }, [formData, originalData]);
   
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
   
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e: React.MouseEvent) => {
+    // Since we're now using a div instead of a form, we don't need e.preventDefault()
     
     if (!formData.parafia_id) {
       setError('Proszę wybrać parafię');
@@ -83,6 +106,23 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
       
       if (response.success) {
         toast.success('Parafia została przypisana pomyślnie');
+        
+        // Update original data to match current data
+        setOriginalData({...formData});
+        setIsModified(false);
+        
+        // Get the selected parish for immediate display
+        const selectedParafia = parafie.find(p => p.id.toString() === formData.parafia_id);
+        if (selectedParafia) {
+          // Create local data for immediate display
+          setLocalSavedData({
+            id: selectedParafia.id,
+            wezwanie: selectedParafia.wezwanie,
+            miejscowosc: selectedParafia.miejscowosc
+          });
+        }
+        
+        // Call parent's onSuccess callback to trigger full refresh
         onSuccess();
       } else {
         setError(response.message || 'Nie udało się przypisać parafii');
@@ -107,24 +147,40 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
         </div>
       )}
       
-      {!initialData?.parafia && !readOnly && (
-        <div className="mb-4 p-4 text-blue-200 bg-blue-900/30 rounded-md border border-blue-800">
-          Kandydat nie ma jeszcze przypisanej parafii. Wybierz parafię, aby przypisać kandydata.
-        </div>
-      )}
-      
-      {initialData?.parafia && (
-        <div className="mb-4 p-4 bg-gray-750 rounded-md border border-gray-600">
-          <h5 className="text-lg font-medium mb-2 text-amber-400">Aktualna parafia</h5>
-          <div className="space-y-1 text-gray-200">
-            <div><strong className="text-amber-300">Wezwanie:</strong> {initialData.parafia.wezwanie}</div>
-            <div><strong className="text-amber-300">Miejscowość:</strong> {initialData.parafia.miejscowosc}</div>
-          </div>
-        </div>
-      )}
+      {(() => {
+        // Use local saved data if available, otherwise use parent data
+        const displayData = localSavedData ? { parafia: localSavedData } : initialData;
+        
+        if (!displayData?.parafia && !readOnly) {
+          return (
+            <div className="mb-4 p-4 text-blue-200 bg-blue-900/30 rounded-md border border-blue-800">
+              Kandydat nie ma jeszcze przypisanej parafii. Wybierz parafię, aby przypisać kandydata.
+            </div>
+          );
+        }
+        
+        if (displayData?.parafia) {
+          return (
+            <div className="mb-4 p-4 bg-gray-750 rounded-md border border-gray-600">
+              <h5 className="text-lg font-medium mb-2 text-amber-400">Aktualna parafia</h5>
+              <div className="space-y-1 text-gray-200">
+                <div><strong className="text-amber-300">Wezwanie:</strong> {displayData.parafia.wezwanie}</div>
+                <div>
+                  <strong className="text-amber-300">Miejscowość:</strong>{" "}
+                  {displayData.parafia.miejscowosc || 
+                    (displayData.parafia.adres?.miejscowosc) || 
+                    (displayData.parafia.wezwanie?.includes('(') && displayData.parafia.wezwanie.match(/\((.*?)\)/)?.[1])}
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        return null;
+      })()}
       
       {!readOnly && (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           <div className="mb-4">
             <label htmlFor="parafia_id" className="block text-sm font-medium text-amber-300 mb-1">Parafia*</label>
             <select
@@ -163,10 +219,12 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
           
           <div className="flex justify-end">
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={loading || loadingParafie}
               className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm 
-                        text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 
+                        text-sm font-medium text-white 
+                        ${isModified ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'} 
                         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 
                         ${(loading || loadingParafie) ? 'opacity-75 cursor-not-allowed' : ''}`}
             >
@@ -178,10 +236,12 @@ const KandydatParafiaForm: React.FC<KandydatParafiaFormProps> = ({
                   </svg>
                   Zapisywanie...
                 </>
-              ) : 'Przypisz parafię'}
+              ) : isModified ? 
+                'Zapisz zmiany w parafii' : 
+                'Przypisz parafię'}
             </button>
           </div>
-        </form>
+        </div>
       )}
     </div>
   );
